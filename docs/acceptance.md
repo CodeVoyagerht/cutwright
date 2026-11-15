@@ -152,7 +152,7 @@ cutwright build real-11-13.json -o out
 
 ```
 python -m unittest discover -s tests -t .
-Ran 280 tests in 36.301s
+Ran 282 tests in 58.177s
 OK (skipped=2)
 ```
 
@@ -175,6 +175,10 @@ cutwright validate shotlist.json --check-files → 0 个错误，0 个警告
 cutwright build shotlist.json -o out --opt jobs=4 → 157.7s，成片体检 8 项全 OK
 cutwright qc shotlist.json --mp4 "out\长夜名单 第1集.mp4" → 20 项全过
 ```
+
+响度：同一条片子做完响度归一化后积分 **-13.8 LUFS**（峰值 -11.9 dB）；
+归一化之前只有 RMS -19.6 dB / 峰值 -15.3 dB——手机外放会明显小一截。
+`--opt loudness=false` 可关掉（关掉后实测约 -17.3 LUFS）。
 
 自检指标：66 镜 / 14 段 = 平均每段用 4.7 次，相邻同源 0 次，镜长 1.00–3.60s（均值 2.39），
 时间线断点 0，字幕与旁白都落在画面内。

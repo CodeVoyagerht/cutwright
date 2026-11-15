@@ -52,6 +52,8 @@ SEGMENT_CRF = 15
 
 # 预览档：只求「能看、能对时间」，几分钟的片子几十秒出。
 # crf 28 + veryfast 的观感是「够看清字幕和构图」，不会用于交付。
+# 成片目标响度：短视频平台常见 -14 LUFS，峰值 -1 dBTP。
+DEFAULT_LOUDNESS = -14.0
 PREVIEW_SEGMENT_CRF = 30
 PREVIEW_PRESET = "veryfast"
 
@@ -585,6 +587,7 @@ class FFmpegBackend(Backend):
             mix_pads.append(f"[{pad}]")
             index += 1
 
+        mix_out = "[aout]"
         if mix_pads:
             if len(mix_pads) == 1:
                 graph.append(f"{mix_pads[0]}anull[aout]")
@@ -592,11 +595,17 @@ class FFmpegBackend(Backend):
                 graph.append("".join(mix_pads)
                              + f"amix=inputs={len(mix_pads)}:duration=first:normalize=0"
                              + "[aout]")
+            target = self._loudness_target()
+            if target is not None:
+                # 每个镜头只对齐到 -20 dBFS，混完整体还是偏轻；成片这一层必须
+                # 有响度归一化，否则手机上听着比参考片小一截。
+                graph.append(f"[aout]loudnorm=I={_f(target)}:TP=-1.0:LRA=11[afin]")
+                mix_out = "[afin]"
         graph.extend(audio_graph)
 
         cmd.extend(["-filter_complex", ";".join(graph), "-map", "[vout]"])
         if mix_pads:
-            cmd.extend(["-map", "[aout]", "-c:a", "aac", "-b:a", "192k",
+            cmd.extend(["-map", mix_out, "-c:a", "aac", "-b:a", "192k",
                         "-ar", "48000", "-ac", "2"])
         else:
             cmd.append("-an")
@@ -667,6 +676,17 @@ class FFmpegBackend(Backend):
             fade_start = max(0.0, start + dur - min(fade_out, dur))
             parts.append(f"fade=t=out:st={_f(fade_start)}:d={_f(min(fade_out, dur))}:alpha=1")
         return f"[{input_index}:v]{','.join(parts)}[{label}]"
+
+    def _loudness_target(self) -> Optional[float]:
+        """成片目标响度（LUFS）。``loudness=false`` / ``0`` 关掉这一层。"""
+        raw = self.options.get("loudness", DEFAULT_LOUDNESS)
+        if raw is None or raw is False or raw == 0:
+            return None
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            return DEFAULT_LOUDNESS
+        return value if -40.0 < value < 0.0 else DEFAULT_LOUDNESS
 
     def _music_needs_loop(self, item: TimelineAudio, src_in: float, dur: float,
                           warnings: List[str]) -> bool:

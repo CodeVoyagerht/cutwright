@@ -115,6 +115,21 @@ def _make_scratch(prefix: str) -> str:
     raise unittest.SkipTest("找不到可写的临时目录（系统临时目录与仓库都不可写）")
 
 
+def _integrated_lufs(path: str, paths) -> float:
+    """用 ebur128 量整片积分响度（LUFS）。"""
+    import re
+    import subprocess
+    proc = subprocess.run(
+        [paths.ffmpeg, "-hide_banner", "-nostats", "-i", path,
+         "-af", "ebur128", "-f", "null", "-"],
+        capture_output=True, stdin=subprocess.DEVNULL)
+    text = (proc.stderr or b"").decode("utf-8", "replace")
+    hits = re.findall(r"I:\s+(-?\d+\.\d+) LUFS", text)
+    if not hits:
+        raise AssertionError("量不出响度：\n" + text[-400:])
+    return float(hits[-1])
+
+
 class BackendContractTest(unittest.TestCase):
     """不需要真的调用 ffmpeg 的那部分契约。"""
 
@@ -524,6 +539,47 @@ class FFmpegBuildTest(unittest.TestCase):
         self.assertEqual((info.width, info.height), CANVAS)
         self.assertAlmostEqual(info.duration, CLIP_SECONDS * 2, delta=0.5)
         self.assertFalse(result.data["ambient"])
+
+    def test_final_mix_is_normalized_to_target(self):
+        """每个镜头只对齐 -20 dBFS，混完还要把成片拉到目标响度。"""
+        music = os.path.join(self.scratch, "quiet_bgm.mp3")
+        media.run([self.paths.ffmpeg, "-y", "-hide_banner", "-loglevel", "error",
+                   "-f", "lavfi", "-i", "sine=frequency=330:duration=3",
+                   "-b:a", "128k", music])
+        raw = {
+            "name": "loud", "canvas": {"width": CANVAS[0], "height": CANVAS[1]},
+            "fps": FPS,
+            "video_segments": [{"file": self.clips[0], "src_start": 0.0,
+                                "src_dur": CLIP_SECONDS}],
+            "audio_segments": [{"file": music, "tl_start": 0.0,
+                                "tl_dur": CLIP_SECONDS, "gain_db": -40.0}],
+        }
+        timeline = Timeline.from_shotlist(Shotlist.from_dict(raw))
+        result = FFmpegBackend(paths=self.paths,
+                               options={"keep_temp": True}).build(
+            timeline, os.path.join(self.scratch, "out_loud"))
+        self.assertTrue(result.ok, msg=result.error)
+        lufs = _integrated_lufs(result.artifacts[0], self.paths)
+        self.assertAlmostEqual(lufs, -14.0, delta=3.0,
+                               msg="成片响度应当接近 -14 LUFS，实测 %.1f" % lufs)
+
+    def test_loudness_can_be_disabled(self):
+        raw = {
+            "name": "flat", "canvas": {"width": CANVAS[0], "height": CANVAS[1]},
+            "fps": FPS,
+            "video_segments": [{"file": self.clips[0], "src_start": 0.0,
+                                "src_dur": CLIP_SECONDS}],
+        }
+        timeline = Timeline.from_shotlist(Shotlist.from_dict(raw))
+        result = FFmpegBackend(paths=self.paths,
+                               options={"keep_temp": True,
+                                        "loudness": False}).build(
+            timeline, os.path.join(self.scratch, "out_flat"))
+        self.assertTrue(result.ok, msg=result.error)
+        lufs = _integrated_lufs(result.artifacts[0], self.paths)
+        # 不归一化时实测约 -17.3 LUFS（每镜只对齐到 -20 dBFS 的均值），
+        # 与被拉到 -14 的差别要有 2 LU 以上，否则这条用例证明不了任何事。
+        self.assertLess(lufs, -16.0, "关掉归一化后不该被拉到 -14")
 
     # -- 配乐太短 ---------------------------------------------------------- #
     def test_short_music_is_looped_to_cover_the_film(self):

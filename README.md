@@ -18,8 +18,8 @@
 # 1. 本机能不能干这活
 cutwright doctor
 
-# 2. 生成一份能直接跑的示例（不需要任何素材）
-cutwright init demo && cd demo
+# 2. 生成一份能直接跑的示例：分镜表 + 用 ffmpeg 现造的素材（不需要你准备任何东西）
+cutwright init demo --with-media && cd demo
 
 # 3. 三步走：查 → 排 → 出
 cutwright validate shotlist.json --check-files

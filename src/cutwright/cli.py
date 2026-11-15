@@ -18,7 +18,7 @@ import shutil
 import sys
 from typing import Any, Dict, List, Optional
 
-from . import __version__, config, media, planner, qc
+from . import __version__, config, demo, media, planner, qc
 from .backends import available_backends, get_backend
 from .schema import Shotlist, load_shotlist, validate
 from .timeline import Timeline, TimelineError
@@ -327,6 +327,9 @@ def cmd_init(args: argparse.Namespace) -> int:
     sl = Shotlist.from_dict({
         "name": args.name,
         "material_dir": material_dir,
+        # 画框 PNG 与配乐跟视频放同一个目录，否则 validate --check-files 会
+        # 报 E041/E051——素材目录分不分家是使用者的选择，默认不分。
+        "asset_dir": material_dir,
         "canvas": {"width": 1080, "height": 1920},
         "fps": 30,
         "styles": {k: v.to_dict() for k, v in
@@ -363,15 +366,30 @@ def cmd_init(args: argparse.Namespace) -> int:
         with open(readme, "w", encoding="utf-8") as fh:
             fh.write(_SCAFFOLD_README.format(name=args.name, materials=material_dir))
 
+    made: List[str] = []
+    if args.with_media:
+        try:
+            total = Timeline.from_shotlist(sl).duration
+            report = demo.make_demo_media(
+                material_dir, clips=demo.SCAFFOLD_CLIPS,
+                bgm_duration=total + 0.5, log=lambda m: _err(m))
+            made = report["created"]
+        except demo.DemoMediaError as exc:
+            _err(f"演示素材没造出来：{exc}")
+            return 1
+
     if args.json:
         _print_json({"dir": target, "shotlist": shotlist_path,
                      "material_dir": material_dir,
-                     "files": list(_EXAMPLE_FILES)})
+                     "files": list(_EXAMPLE_FILES) + [os.path.basename(p) for p in made]})
         return 0
     print(f"已在 {target} 生成：")
     print(f"  shotlist.json   分镜表（3 镜 / 2 字幕 / 1 花字 / 1 旁白 / 1 叠加 / 1 配乐）")
     print(f"  README.md       接下来怎么走")
-    print(f"  materials/      把素材放这里（{material_dir}）")
+    if made:
+        print(f"  materials/      {len(made)} 个合成素材（可以立刻 build）")
+    else:
+        print(f"  materials/      把素材放这里（{material_dir}）")
     print("\n下一步：")
     print(f"  cutwright plan     {shotlist_path}")
     print(f"  cutwright build    {shotlist_path} --backend ffmpeg -o out")
@@ -388,6 +406,9 @@ _SCAFFOLD_README = """# {name}
 配乐放 `bgm.mp3`，叠加用的透明 PNG 放 `frame.png`——缺哪个就先把 `shotlist.json`
 里对应的段落删掉，validate 会告诉你还缺什么。
 
+不想自己找素材？生成时加 `--with-media`，它会用 ffmpeg 现场合成这三段片子、
+那张透明画框和一条配乐，直接就能 build 出一条真片子看效果。
+
 ## 三步走
 ```bash
 cutwright validate shotlist.json       # 先看有没有错误
@@ -400,7 +421,8 @@ cutwright build    shotlist.json --backend ffmpeg -o out
 
 ## 改分镜表的三条经验
 1. `tl_start` 可以不写——不写就按顺序自动首尾相接。
-2. 字幕里 `|` 后面是关键词，会用 `keyword_color` 换色。
+2. 字幕里用 `|`（半角或全角 `｜`）隔开的是关键词，**成对交替**换色：
+   `"这样拍|竖屏才好看"` → 白 / 黄；`"A|B|C"` → 白 / 黄 / 白。分隔符本身不印出来。
 3. 旁白只出声不出字：样式必须 `invisible`，否则会糊在画面上（qc 会报错）。
 """
 
@@ -464,6 +486,8 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("dir", help="生成到哪个目录")
     sp.add_argument("--name", default="demo", help="分镜表名（默认 demo）")
     sp.add_argument("--materials", help="素材目录（默认 <dir>/materials）")
+    sp.add_argument("--with-media", action="store_true",
+                    help="连素材一起合成（需要 ffmpeg；生成后可以直接 build）")
 
     return parser
 

@@ -5,8 +5,25 @@
 
 ## [Unreleased]
 
+### 新增
+
+- **`cutwright init demo --with-media`**：连素材一起现造。之前 `init` 只写一份
+  引用 `clip01.mp4` 之类文件的空架子，照着 README 敲完第一条命令就撞上
+  「素材不存在」——现在默认三镜 + 透明画框 + 配乐全部用 ffmpeg 合成，
+  `init` 完可以直接 `build` 出一条真片子。
+- **`cutwright.demo` 模块**：素材合成逻辑从 `examples/demo/make_media.py`
+  抽出来，CLI 与示例脚本共用一份，避免「demo 能跑而 init 造出来的跑不了」。
+  里面的 RGBA PNG 编码器只用 `zlib` + `struct`，所以演示素材不依赖 Pillow。
+- **`tests/test_demo.py`**：逐像素验证画框中间真的是 `alpha=0`（黑窟窿那次
+  就是没人验证这个），以及第二次运行必须跳过已有素材。
+
 ### 修复
 
+- **`init` 生成的画面叠加与配乐找不到**：`shotlist.json` 只写了 `material_dir`
+  没写 `asset_dir`，于是 `frame.png` / `bgm.mp3` 被解析到上一级目录，`validate
+  --check-files` 报 E041 / E051。
+- **demo 配乐只有 6 秒**：BGM 时长取的是「最长的那一段素材」，而成片 13.8 秒，
+  音乐在 6 秒处就停了。现在按成片时长合成（14.0 秒，尾部淡出）。
 - **关键词只认半角 `|`**：中文输入法打出来的是全角 `｜`，于是分隔符原样印在
   画面上、关键词也不换色。现在两种都认，而且是**成对交替**——`a｜b｜c` 只让
   `b` 变色，不会把后半句整片刷黄。

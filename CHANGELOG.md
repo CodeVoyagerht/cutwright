@@ -18,6 +18,16 @@
 - **`story` 的分场报告**：每场镜头数/起止、`warnings`、`unresolved`，`--json` 里是结构化字段。
 - **`tests/test_story.py`**（50+ 例）：帧数和精确、相邻不同源、过短素材宁可跳过也不做
   「糊到看不清的慢放」、输出必须过分镜表校验。
+- **剪映草稿读入（`cutwright import`）**：草稿目录 → 分镜表，加密草稿自动解密
+  （`videoeditor.dll`），`--plain-only` 时只读明文、遇密文直接报错而不是给空表。
+  拿回排布（源文件、入点、时长、变速、时间线位置、字幕文案与时间、音频位置），
+  不还原样式/转场/关键帧/特效；旁白与字幕分不开、换机器后素材路径失效这两条
+  都写进 `warnings` 与 `missing_files()`。新增 `src/cutwright/backends/jianying/reader.py`
+  与 `tests/test_jianying_reader.py`（12 例，含真密文往返）。
+- **切片缓存与并行、快编档**：`--opt jobs=N` 并行切镜，切片按内容摘要命名
+  （`_build/seg_<digest>.mp4`）跨次复用，`--opt preview=true` 出低码率快编版。
+  摘要只含画面相关的量（源文件 mtime/size、入点、时长、变速、缩放、画幅、fps），
+  改字幕或换配乐不会触发重切。实测 8 镜 12.9s：9.44s → 7.85s → 5.58s（命中缓存）。
 
 ### 修复
 

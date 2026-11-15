@@ -572,6 +572,62 @@ def cmd_story(args: argparse.Namespace) -> int:
 
 
 # --------------------------------------------------------------------------- #
+# 剪映草稿 → 分镜表
+# --------------------------------------------------------------------------- #
+def cmd_import(args: argparse.Namespace) -> int:
+    from .backends.jianying import reader as jy_reader
+
+    if not os.path.isdir(args.draft):
+        raise SystemExit(f"草稿目录不存在: {args.draft}")
+    try:
+        draft = jy_reader.read_draft(
+            args.draft, crypto=False if args.plain_only else None)
+    except jy_reader.DraftError as error:
+        if args.json:
+            _print_json({"ok": False, "error": str(error)})
+        else:
+            _err(f"读不了这份草稿：{error}")
+        return 1
+
+    shotlist = draft.to_shotlist()
+    shotlist.name = args.name or shotlist.name
+    shotlist, _ = planner.normalize_shotlist(shotlist, trust_existing=True)
+    issues = validate(shotlist, check_files=False)
+    errors = [i for i in issues if i.level == "error"]
+    _write_shotlist(shotlist, args.out)
+    missing = draft.missing_files()
+
+    if args.json:
+        _print_json({"ok": not errors, "summary": draft.summary(), "out": args.out,
+                     "shots": len(draft.videos), "texts": len(draft.texts),
+                     "audios": len(draft.audios), "encrypted": draft.encrypted,
+                     "missing": missing,
+                     "warnings": draft.warnings + [str(i) for i in errors]})
+        return 0 if not errors else 1
+
+    print(draft.summary())
+    print(f"  → {args.out}：{len(shotlist.video_segments)} 镜 / "
+          f"{len(shotlist.text_segments)} 条字幕 / {len(shotlist.audio_segments)} 条音频 / "
+          f"{_hms(shotlist.video_duration())}")
+    for warning in draft.warnings[:6]:
+        _err(f"注意: {warning}")
+    if missing:
+        _err(f"注意: {len(missing)} 个素材文件已经不在原路径了（换机器就会这样），"
+             f"例如 {missing[0]}")
+        _err("      把这些素材放回去，或改分镜表里的 file 再 build。")
+    for issue in errors[:5]:
+        print(issue)
+    if errors:
+        _err(f"读出来的分镜表有 {len(errors)} 个错误（已写出，修完再 build）")
+        return 1
+    if not shotlist.video_segments:
+        _err("这份草稿没有视频段，分镜表是空的。")
+        return 1
+    print(f"  下一步: cutwright validate {args.out} --check-files")
+    return 0
+
+
+# --------------------------------------------------------------------------- #
 # 解析器
 # --------------------------------------------------------------------------- #
 def build_parser() -> argparse.ArgumentParser:
@@ -654,6 +710,13 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--no-captions", action="store_true", help="不出字幕")
     sp.add_argument("--vo-captions", action="store_true", help="旁白也出字幕（默认不出）")
     sp.add_argument("--check-files", action="store_true", help="同时检查旁白/配乐文件是否存在")
+
+    sp = add("import", "剪映草稿 → 分镜表（读回来改成数据，再换个后端出片）", cmd_import)
+    sp.add_argument("draft", help="剪映草稿目录（里面有 draft_content.json 的那层）")
+    sp.add_argument("--out", "-o", default="shotlist.json", help="分镜表写到哪")
+    sp.add_argument("--name", help="分镜表名字（默认用草稿目录名）")
+    sp.add_argument("--plain-only", action="store_true",
+                    help="只读明文草稿，绝不加载 videoeditor.dll（解不开就报错退出）")
 
     return parser
 

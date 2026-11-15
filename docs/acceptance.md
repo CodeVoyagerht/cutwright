@@ -99,6 +99,18 @@ cutwright build examples\demo\shotlist.json -b jianying -o .tmp-jy --opt encrypt
 - 叠加层的淡入 / 滑动 / 悬浮动效还没有映射成剪映关键帧，草稿里按静态图片写；
 - 没有模板时 `Timelines/<id>/template.tmp` 不写，缺它是否影响加载未验证。
 
+**读回来（`cutwright import`）**：用同一份 `examples/story/shotlist.json` 写成加密草稿
+（`videoeditor.dll` 真加密，36,304 字节），再让 `read_draft` 读回：
+
+```
+读回：.tmp-enc-draft：8 镜 / 8 条字幕 / 1 条音频 / 1080x1920 / 12.90s（加密草稿）
+--plain-only → 草稿是加密的（draft_content.json），但这次明确不要加载 videoeditor.dll。
+```
+
+镜数、字幕数、音频数、画幅、总时长与写之前一致；`--plain-only` 遇密文按设计报错退出。
+本轮没有剪映手剪的真草稿可读（本机草稿库里只有 `root_meta_info.json`，没有草稿目录），
+所以「读剪映自己写的草稿」这条**未验收**——读的是本工具写出的合法草稿。
+
 ## 7. 达芬奇（`-b resolve`）
 
 本机 `import DaVinciResolveScript` 失败（`fusionscript` DLL 找不到，外部脚本没开），
@@ -109,7 +121,7 @@ cutwright build examples\demo\shotlist.json -b jianying -o .tmp-jy --opt encrypt
 
 ```
 python -m unittest discover -s tests -t .
-Ran 181 tests in 40.367s
+Ran 251 tests in 44.959s
 OK (skipped=2)
 ```
 

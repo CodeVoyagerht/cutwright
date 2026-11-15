@@ -132,6 +132,29 @@ $ cutwright story examples/story/screenplay.json --index examples/story/material
 产线流程 [references/story-workflow.md](skills/cutwright/references/story-workflow.md)。
 可直接跑的例子在 [`examples/story/`](examples/story)（`python examples/story/make_media.py` 会现造素材）。
 
+## 剪映里剪过的，也能读回来
+
+写草稿只解决一半问题。别人在剪映里手剪了一版，你要么认命重排，要么把它变回数据：
+
+```console
+$ cutwright import "C:\Users\me\...\com.lveditor.draft\我的草稿" -o shotlist.json
+我的草稿：21 镜 / 14 条字幕 / 2 条音频 / 1080x1920 / 63.40s
+  → shotlist.json：21 镜 / 14 条字幕 / 2 条音频 / 1:03.40
+  下一步: cutwright validate shotlist.json --check-files
+```
+
+读的是**排布**，不是像素：镜头的出入点、变速、字幕文案与时间、音频位置都拿回来了，
+**字幕样式、转场、关键帧、特效不还原**（猜错的样式比没有更糟），草稿里的旁白和字幕
+也分不开，一律按字幕处理。加密草稿要本机有能用的 `videoeditor.dll`，没有就报错，不会
+悄悄给你一份空表；素材换了机器路径失效时，它会先列表告你多少条已经不在。
+
+## 重复渲只重切改过的镜头
+
+切片按内容摘要命名（`_build/seg_<digest>.mp4`），同一份素材、同一组参数第二次渲染
+直接复用；`--opt jobs=4` 让多镜并行，`--opt preview=true` 用低码率快编一版看节奏。
+实测（8 镜 / 12.9s / 1080×1920）：串行 9.44s → 并行 7.85s → 并行 + 命中缓存 5.58s。
+镜头越多、缓存的差距越大——改一条字幕不该重切 40 个镜头。
+
 ## 安装
 
 ```bash
@@ -171,6 +194,7 @@ python skills/cutwright/scripts/install.py --target all
 | `qc` | 时间线体检；给 `--mp4` 则连成片一起 | 无 |
 | `index` | 扫素材目录 → 索引（按文件名打标签、量可用时长） | 写文件 |
 | `story` | 剧本 + 索引 → 分镜表，打印分场报告 | 写文件 |
+| `import` | 剪映草稿 → 分镜表（明文或加密草稿） | 写文件 |
 | `init` | 生成可用示例 | 写文件 |
 
 所有命令都接受 `--json`：**stdout 只有一份合法 JSON，日志全走 stderr，退出码说真话**
@@ -211,10 +235,10 @@ python skills/cutwright/scripts/install.py --target all
 python -m unittest discover -s tests -t .
 ```
 
-181 个用例，零依赖，`git clone` 完就能跑。真渲染的用例会检测 ffmpeg，没有就 skip
+251 个用例，零依赖，`git clone` 完就能跑。真渲染的用例会检测 ffmpeg，没有就 skip
 而不是 fail——CI 上的 `windows-latest` 有 ffmpeg，本地没装的开发者也不该被卡住。
 
-这台机器上的实测记录（doctor / validate / plan / build / qc / 剪映草稿 / 181 个用例）
+这台机器上的实测记录（doctor / validate / plan / build / qc / 剪映草稿 / 251 个用例）
 都在 [docs/acceptance.md](docs/acceptance.md)，包括**哪些是未验收项**。
 
 契约测试（`tests/test_cli_contract.py`）锁死的是**机器可读的部分**：`--json` 的字段、

@@ -29,7 +29,19 @@ cutwright build shotlist.json -b resolve  --opt grade=lut.cube
 | `audio` | `true` | 是否混音轨；纯画面交付时关掉 |
 | `grade` | `""` | 整片调色滤镜串，如 README 里那条 `eq=...` |
 | `overlay` | `true` | 是否烧 `image_overlays` |
+| `jobs` | `min(4, CPU, 待切镜头数)` | 并行切片数，`1` 是串行；钳在 1–32 |
+| `cache` | `true` | 切片按内容摘要复用（`_build/seg_<digest>.mp4`） |
+| `preview` | `false` | 快编档：切片 `-crf 30 -preset veryfast`，成片 `26/veryfast` |
+| `keep_temp` | `true` | 保留 `_build/` 中间件（复用靠它） |
 | `dry_run` | `false` | 只打印命令不执行 |
+
+**缓存摘要里有什么**：源文件绝对路径 + `mtime:size`、`src_in`、`src_dur`、`speed`、
+`zoom`/`zoom_amount`/`cx`、画布宽高、fps、是否 preview。**没有**字幕文案、配乐、镜头顺序
+——改一句字幕不该重切 40 个镜头。改了切片相关的滤镜逻辑要把 `text.RENDER_VERSION`
+那样的版本位一起推进，否则会复用旧片。
+
+实测（8 镜 / 12.9s / 1080×1920）：串行无缓存 9.44s → 4 路并行 7.85s → 并行 + 命中缓存
+5.58s。瓶颈在最后那条 compose 命令，它是单进程的。
 
 **管线**（照搬一条已跑通 86 秒真片的实现，不是重写）：
 
@@ -68,6 +80,23 @@ cutwright build shotlist.json -b resolve  --opt grade=lut.cube
 
 **不做的事**：不替你导出视频。剪映 11.x 是 Qt/QML，UI Automation 一个控件都不暴露，
 任何声称「能自动导出」的库都在截图匹配，脆得没法用于交付。草稿给你，导出点按钮。
+
+**读回来（`cutwright import`）**
+
+```bash
+cutwright import "<草稿目录>" -o shotlist.json          # 加密草稿会自动解密
+cutwright import "<草稿目录>" -o shotlist.json --plain-only   # 绝不加载 dll
+```
+
+拿回的是**排布**：每镜的源文件、入点、时长、变速、时间线位置，字幕文案与时间，音频位置。
+不还原：字幕样式、转场、关键帧、特效、调色（猜错的样式比没有更糟，宁可让用户重设）。
+两个已知的语义损失：
+
+- **旁白和字幕分不开**——草稿里两者都是文字轨，读回来一律当字幕，`warnings` 里会明说。
+- **素材路径是绝对路径**——换机器后 `missing_files()` 会列出失效的条目，别当作素材还在。
+
+加密草稿要本机有可用的 `videoeditor.dll`（11.6 那份自检通过；11.7 解不开自己的密文，
+`doctor` 会说明原因）。`--plain-only` 时遇到密文直接报错退出，不会给你一份空表。
 
 ## 达芬奇后端
 

@@ -156,6 +156,10 @@ cutwright build shotlist.json -o out               # ④ 出片（或 -b jianyin
 | `init <dir>` | 生成示例 |
 | `index <素材目录> -o idx.json` | 扫素材：按文件名打标签、量可用时长 |
 | `story <剧本> --index idx.json -o s.json` | 剧本 → 分镜表，打印分场报告 |
+| `import <草稿目录> -o s.json` | 剪映草稿 → 分镜表（`--plain-only` 表示绝不加载 dll） |
+
+`build` 的提速选项：`--opt jobs=4`（多镜并行）、`--opt preview=true`（低码率快编一版）、
+切片默认按内容摘要缓存，同一份素材第二次渲直接复用。
 
 全命令支持 `--json`：stdout 只有 JSON，日志走 stderr。给机器读就用它。
 
@@ -194,6 +198,10 @@ cutwright build shotlist.json -o out               # ④ 出片（或 -b jianyin
    改文件名重跑 `index`，或者手写索引的 `tags`。
 9. **剧本改了 fps 之后时长全错** → `S003` 会说 fps 非法；这支工具不会悄悄把 fps
    修成 30，因为那会把「写错了」伪装成「算错了」。
+10. **`import` 读完一重建，旁白跑到画面上** → 草稿里旁白也是文字轨，读的时候分不开，
+    一律按字幕给。重建前把 `vo_hidden` 那几条改回旁白，或者 `--opt` 时关掉字幕。
+11. **`import` 报「解不开草稿」** → 先 `cutwright doctor` 看剪映的加密 dll 可用性；
+    11.7 的 dll 会解不开自己的密文（已知），要 11.6 那份。只想读明文就加 `--plain-only`。
 
 ## 文件索引
 

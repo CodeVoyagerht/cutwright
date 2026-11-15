@@ -43,8 +43,9 @@ from ..base import Backend, BuildResult, register
 from . import crypto as _crypto
 from .draft import build_content, validate_content
 from .install import build_draft_dir, install_draft
+from .reader import DraftError, DraftRead, read_draft
 
-__all__ = ["JianyingBackend"]
+__all__ = ["JianyingBackend", "DraftRead", "DraftError", "read_draft"]
 
 #: 草稿名兜底值（时间线没名字时用）。
 DEFAULT_NAME = "cutwright"

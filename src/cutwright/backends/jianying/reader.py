@@ -23,6 +23,7 @@ import base64
 import binascii
 import json
 import os
+import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
@@ -35,6 +36,8 @@ __all__ = ["DraftError", "DraftRead", "read_draft", "read_content"]
 # 剪映草稿里可能的正文字段名（不同小版本不一样，按优先级试）。
 CONTENT_FILES: Tuple[str, ...] = ("draft_content.json", "draft_info.json")
 MICROS = 1_000_000.0
+# 朗读/字幕生成的音频存在草稿目录里，草稿用这种前缀表示「相对草稿目录」。
+_PLACEHOLDER = re.compile(r"^##_draftpath_placeholder_[^#]*##[\\/]?")
 
 
 class DraftError(ValueError):
@@ -78,7 +81,8 @@ class DraftRead:
         videos = [VideoSegment(file=item["file"], src_start=item["src_start"],
                                src_dur=item["src_dur"], tl_start=item["tl_start"],
                                speed=item["speed"], act=item.get("act", ""),
-                               shot=index + 1, desc=item.get("desc", ""))
+                               shot=index + 1, desc=item.get("desc", ""),
+                               still=bool(item.get("still", False)))
                   for index, item in enumerate(self.videos)]
         texts = [TextSegment(text=item["text"], tl_start=item["tl_start"],
                              tl_dur=item["tl_dur"],
@@ -181,21 +185,30 @@ def read_content(content: Dict[str, Any], *, path: str = "") -> DraftRead:
             if kind == "video" and material is not None:
                 item = _video_item(segment, material)
                 if item.get("photo"):
+                    # 图片段是静帧，不是「没有画面」：保留下来，重建时按 still 处理，
+                    # 否则图文草稿读回来会凭空少掉几秒。
                     image_count += 1
-                    continue
+                    item["still"] = True
+                    item["src_start"] = 0.0
+                    item["speed"] = 1.0
                 draft.videos.append(item)
             elif kind == "text" and material is not None:
                 draft.texts.append(_text_item(segment, material))
             elif kind == "audio" and material is not None:
                 draft.audios.append(_audio_item(segment, material))
 
+    for group in (draft.videos, draft.texts, draft.audios):
+        for item in group:
+            if item.get("file"):
+                item["file"] = _resolve_media(item["file"], path)
+
     draft.videos.sort(key=lambda item: (item["tl_start"], item["file"]))
     draft.texts.sort(key=lambda item: item["tl_start"])
     draft.audios.sort(key=lambda item: item["tl_start"])
 
     if image_count:
-        draft.warnings.append("草稿里有 %d 张图片/照片段，分镜表只表达视频，已略过"
-                              % image_count)
+        draft.warnings.append("草稿里有 %d 张图片/照片段，已按静帧（still）读进来"
+                              "——重建时会铺成同样时长的画面" % image_count)
     missing_ids = sorted(_dangling_ids(tracks, roots))
     if missing_ids:
         draft.warnings.append("有 %d 个片段引用了 materials 里不存在的素材（id: %s）"
@@ -305,6 +318,27 @@ def _material_path(material: Dict[str, Any]) -> str:
         if isinstance(value, str) and value:
             return os.path.normpath(value.replace("/", os.sep))
     return ""
+
+
+def _resolve_media(path: str, draft_dir: str) -> str:
+    """把草稿里的素材路径变成能直接打开的本机路径。
+
+    剪映把朗读/字幕音频存在**草稿目录**下，草稿里写成
+    ``##_draftpath_placeholder_<uuid>_##/textReading/xxx.wav``。当成绝对路径去
+    open 必然失败，报出来的还是跟用户无关的怪路径；这里把占位前缀换回草稿目录。
+    """
+    if not path:
+        return path
+    text = str(path).replace("\\", "/")
+    match = _PLACEHOLDER.match(text)
+    if match:
+        text = text[match.end():]
+    absolute = os.path.isabs(text) or (len(text) > 1 and text[1] == ":")
+    if absolute:
+        return os.path.normpath(text)
+    if draft_dir:
+        return os.path.normpath(os.path.join(draft_dir, text))
+    return os.path.normpath(text)
 
 
 def _video_item(segment: Dict[str, Any], material: Dict[str, Any]) -> Dict[str, Any]:

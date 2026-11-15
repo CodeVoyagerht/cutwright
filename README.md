@@ -148,6 +148,23 @@ $ cutwright import "C:\Users\me\...\com.lveditor.draft\我的草稿" -o shotlist
 也分不开，一律按字幕处理。加密草稿要本机有能用的 `videoeditor.dll`，没有就报错，不会
 悄悄给你一份空表；素材换了机器路径失效时，它会先列表告你多少条已经不在。
 
+图片段不会被当成「没画面」丢掉：它们是静帧，读回来是 `"still": true` 的镜头，重建时
+按同样时长铺一张图。剪映把朗读音频存在草稿目录里、路径写成
+`##_draftpath_placeholder_<uuid>_##/textReading/…`，这类路径会先还原成草稿目录下的真路径，
+否则你会拿到一条指向 `workspace/##_draftpath…` 的假报错。
+
+## 图片也是镜头
+
+`"still": true` 让 `file` 变成一张图片（png/jpg/webp），按 `src_dur` 铺时长：
+
+```json
+{"file": "card.png", "src_dur": 2.5, "still": true}
+```
+
+静帧没有入点、不能变速（写了 `src_start`/`speed` 会报 `W042`/`W043` 并忽略），
+三条产线都认它：ffmpeg 直出用 `-loop 1` 铺帧，剪映写成 `type=photo` 素材，
+达芬奇放进媒体池。图文号、观点卡、封面停 2 秒，都不用为了「一张图」另开一个工程。
+
 ## 重复渲只重切改过的镜头
 
 切片按内容摘要命名（`_build/seg_<digest>.mp4`），同一份素材、同一组参数第二次渲染
@@ -235,10 +252,10 @@ python skills/cutwright/scripts/install.py --target all
 python -m unittest discover -s tests -t .
 ```
 
-251 个用例，零依赖，`git clone` 完就能跑。真渲染的用例会检测 ffmpeg，没有就 skip
+268 个用例，零依赖，`git clone` 完就能跑。真渲染的用例会检测 ffmpeg，没有就 skip
 而不是 fail——CI 上的 `windows-latest` 有 ffmpeg，本地没装的开发者也不该被卡住。
 
-这台机器上的实测记录（doctor / validate / plan / build / qc / 剪映草稿 / 251 个用例）
+这台机器上的实测记录（doctor / validate / plan / build / qc / 剪映草稿 / 268 个用例）
 都在 [docs/acceptance.md](docs/acceptance.md)，包括**哪些是未验收项**。
 
 契约测试（`tests/test_cli_contract.py`）锁死的是**机器可读的部分**：`--json` 的字段、

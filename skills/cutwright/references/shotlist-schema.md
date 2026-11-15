@@ -36,6 +36,7 @@
 | `zoom` | str | `"none"` | `none` / `in` / `out`，Ken Burns 推拉 |
 | `zoom_amount` | float | `0.05` | 推拉幅度，0.05–0.08 安全，>0.12 会糊 |
 | `cx` | float | `0.5` | 横屏裁竖屏时的水平取景（0=左，1=右） |
+| `still` | bool | `false` | 静帧：`file` 是图片（png/jpg/webp），按 `src_dur` 铺时长。没有入点、不能变速——写了 `src_start`/`speed` 会报 `W042`/`W043` 并忽略 |
 | `act` | str | `""` | 所属幕，用于统计 |
 | `shot` | int/str | `null` | 镜号，纯标记，后端用它做命名 |
 | `desc` | str | `""` | 人看的备注，不参与渲染 |
@@ -135,6 +136,8 @@
 | `E032` | error | `tl_dur` ≤ 0 | 给正数 |
 | `E033` | error | `tl_start` 为负 | 从 0 开始 |
 | `W034` | warn | 文字起点超出片尾 | 缩短 `tl_start` 或加镜头 |
+| `W042` | warn | 静帧写了 `src_start` | 删掉；静帧没有入点 |
+| `W043` | warn | 静帧写了 `speed` | 删掉；静帧不变速 |
 | `E040` | error | 叠加层缺 `file` | 补文件名 |
 | `E041` | error | 叠加素材不存在 | 同上 |
 | `E050` | error | 音频缺 `file` | 补文件名 |

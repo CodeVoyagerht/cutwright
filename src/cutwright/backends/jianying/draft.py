@@ -623,7 +623,10 @@ class _DraftBuilder:
                     % (pos + 1, gap / 1_000_000.0))
 
             media_dur = int(info.get("duration_us") or 0)
-            if media_dur and src_start_us + src_dur_us > media_dur:
+            if clip.still:
+                # 静帧：图片素材没有源区间可裁，剪映按整张图铺 target 时长。
+                src_start_us, src_dur_us = 0, tl_dur_us
+            elif media_dur and src_start_us + src_dur_us > media_dur:
                 trimmed = max(media_dur - src_start_us, 0)
                 self.warnings.append(
                     "素材 %s 只有 %.3fs，第 %d 段的源区间被截断到 %.3fs"
@@ -643,10 +646,14 @@ class _DraftBuilder:
                     self.warnings.append(
                         "未探测到 %s 的尺寸，宽高按画布 %dx%d 处理（未验证）"
                         % (posix(clip.source).rsplit("/", 1)[-1], self.width, self.height))
-                duration = media_dur or max(us(clip.src_out), src_start_us + src_dur_us)
-                material_id = self._add(
-                    "videos",
-                    _video_material(uid(), clip.source, duration, width, height))
+                if clip.still:
+                    material_id = self._add(
+                        "videos", _photo_material(uid(), clip.source, width, height))
+                else:
+                    duration = media_dur or max(us(clip.src_out), src_start_us + src_dur_us)
+                    material_id = self._add(
+                        "videos",
+                        _video_material(uid(), clip.source, duration, width, height))
                 self._video_material_by_path[key] = material_id
 
             refs = self._add_video_aux(float(clip.speed or 1.0))
@@ -654,7 +661,8 @@ class _DraftBuilder:
                 material_id, refs,
                 src_start_us=src_start_us, src_dur_us=src_dur_us,
                 tl_start_us=tl_start_us, tl_dur_us=tl_dur_us,
-                speed=float(clip.speed or 1.0), hdr=bool(info.get("hdr")),
+                speed=1.0 if clip.still else float(clip.speed or 1.0),
+                hdr=False if clip.still else bool(info.get("hdr")),
             ))
             prev_end = tl_start_us + tl_dur_us
 

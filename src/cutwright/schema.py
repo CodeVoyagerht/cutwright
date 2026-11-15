@@ -152,12 +152,15 @@ class VideoSegment:
     zoom: str = "none"          # none | in | out
     zoom_amount: float = 0.05
     cx: float = 0.5             # 裁切中心（0=左, 1=右）
+    # 静帧：file 是一张图片而不是视频。剪映的图文草稿、短剧里的回忆定格都用它。
+    # 静帧没有入点概念（src_start 必须是 0），时长由 src_dur 决定。
+    still: bool = False
     extra: Dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, raw: Dict[str, Any]) -> "VideoSegment":
         known = {"file", "src", "src_start", "src_dur", "tl_start", "speed", "act",
-                 "shot", "desc", "zoom", "zoom_amount", "cx", "tl_dur"}
+                 "shot", "desc", "zoom", "zoom_amount", "cx", "tl_dur", "still"}
         # 兼容两种写法：{file: ...} 与 {src: ...}
         f = raw.get("file", raw.get("src", ""))
         seg = cls(
@@ -172,6 +175,7 @@ class VideoSegment:
             zoom=str(raw.get("zoom", "none") or "none"),
             zoom_amount=_as_float(raw.get("zoom_amount"), 0.05),
             cx=_as_float(raw.get("cx"), 0.5),
+            still=bool(raw.get("still", False)),
             extra={k: v for k, v in raw.items() if k not in known},
         )
         # 只给了 src_dur 与 src_start/out 之一时补齐
@@ -196,6 +200,9 @@ class VideoSegment:
              "tl_start": self.tl_start, "speed": self.speed, "act": self.act,
              "shot": self.shot, "desc": self.desc, "zoom": self.zoom,
              "zoom_amount": self.zoom_amount, "cx": self.cx}
+        # 只在是静帧时才写 "still": 普通分镜表不该多出一个恒为 false 的字段。
+        if self.still:
+            d["still"] = True
         d.update(self.extra)
         return d
 
@@ -612,6 +619,10 @@ def validate(shotlist: Shotlist, check_files: bool = False) -> List[Issue]:
             err("E014", f"speed 必须为正数，当前 {seg.speed}", where)
         if seg.zoom not in ("none", "in", "out"):
             warn("W015", f"未知 zoom 值 {seg.zoom!r}，按 none 处理", where)
+        if seg.still and seg.src_start > 0:
+            warn("W042", f"静帧没有入点，src_start={seg.src_start} 会被忽略", where)
+        if seg.still and abs(seg.speed - 1.0) > 1e-6:
+            warn("W043", f"静帧不支持变速，speed={seg.speed} 会被当成 1.0", where)
         if not (0.0 <= seg.cx <= 1.0):
             warn("W016", f"cx 应在 0..1，当前 {seg.cx}", where)
         if check_files and seg.file:

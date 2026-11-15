@@ -54,6 +54,8 @@ class TimelineClip:
     act: str = ""
     shot: Optional[int] = None
     desc: str = ""
+    # 静帧：source 是图片。没有入点、没有原声，时长完全由 src_out - src_in 决定。
+    still: bool = False
 
     @property
     def src_dur(self) -> float:
@@ -203,19 +205,22 @@ class Timeline:
         cursor = 0.0
         for i, seg in enumerate(shotlist.video_segments):
             tl_start = seg.tl_start if seg.tl_start is not None else cursor
+            # 静帧没有「快放/慢放」可言，速度一律按 1：validate 会为显式写错的 speed 报警。
+            speed = 1.0 if seg.still else (seg.speed if seg.speed > 0 else 1.0)
             clips.append(TimelineClip(
                 index=i,
                 source=shotlist.resolve_material(seg.file),
-                src_in=seg.src_start,
-                src_out=seg.src_start + seg.src_dur,
+                src_in=0.0 if seg.still else seg.src_start,
+                src_out=(0.0 if seg.still else seg.src_start) + seg.src_dur,
                 tl_start=tl_start,
-                speed=seg.speed if seg.speed > 0 else 1.0,
+                speed=speed,
                 zoom=seg.zoom,
                 zoom_amount=seg.zoom_amount,
                 cx=seg.cx,
                 act=seg.act,
                 shot=seg.shot,
                 desc=seg.desc,
+                still=seg.still,
             ))
             cursor = tl_start + clips[-1].tl_dur
 

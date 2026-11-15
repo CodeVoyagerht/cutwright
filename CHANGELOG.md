@@ -24,6 +24,14 @@
   不还原样式/转场/关键帧/特效；旁白与字幕分不开、换机器后素材路径失效这两条
   都写进 `warnings` 与 `missing_files()`。新增 `src/cutwright/backends/jianying/reader.py`
   与 `tests/test_jianying_reader.py`（12 例，含真密文往返）。
+- **静帧镜头（`"still": true`）**：分镜表里的 `file` 可以是一张图，按 `src_dur` 铺时长。
+  三条产线都认：ffmpeg 用 `-loop 1` 铺帧、不抽原声，剪映写成 `type=photo` 素材
+  （`PHOTO_DURATION_SENTINEL`），达芬奇照常进媒体池。顺带把 `import` 从「图片段已略过」
+  改成保留成静帧——真实的剪映草稿里图片段很常见，丢掉就是时间线凭空短几秒。
+  新增 `tests/test_still_clips.py`（15 例）与 `W042`/`W043` 两条校验。
+- **剪映草稿里的相对素材路径**：`##_draftpath_placeholder_<uuid>_##/textReading/…`
+  这类路径现在还原成草稿目录下的真实路径。以前它被当成相对当前目录，报出来的是一条
+  跟用户无关的假路径（`workspace/##_draftpath…`），真正的文件反而找不到。
 - **切片缓存与并行、快编档**：`--opt jobs=N` 并行切镜，切片按内容摘要命名
   （`_build/seg_<digest>.mp4`）跨次复用，`--opt preview=true` 出低码率快编版。
   摘要只含画面相关的量（源文件 mtime/size、入点、时长、变速、缩放、画幅、fps），

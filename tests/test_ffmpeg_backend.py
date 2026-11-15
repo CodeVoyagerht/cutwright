@@ -525,6 +525,47 @@ class FFmpegBuildTest(unittest.TestCase):
         self.assertAlmostEqual(info.duration, CLIP_SECONDS * 2, delta=0.5)
         self.assertFalse(result.data["ambient"])
 
+    # -- 静帧 -------------------------------------------------------------- #
+    def _still_png(self, name: str = "still.png") -> str:
+        path = os.path.join(self.scratch, name)
+        Image.new("RGB", (480, 270), (200, 60, 60)).save(path, "PNG")
+        return path
+
+    def test_still_image_becomes_a_clip_of_its_duration(self) -> None:
+        still = self._still_png()
+        raw = {
+            "name": "still_case",
+            "canvas": {"width": CANVAS[0], "height": CANVAS[1]},
+            "fps": FPS,
+            "video_segments": [
+                {"file": still, "src_dur": 1.5, "still": True},
+                {"file": self.clips[1], "src_start": 0.0, "src_dur": CLIP_SECONDS},
+            ],
+        }
+        timeline = Timeline.from_shotlist(Shotlist.from_dict(raw))
+        self.assertTrue(timeline.clips[0].still)
+        self.assertEqual(timeline.clips[0].src_in, 0.0,
+                         "静帧没有入点，src_start 不该被带进时间线")
+        out_dir = os.path.join(self.scratch, "out_still")
+        result = FFmpegBackend(paths=self.paths,
+                               options={"keep_temp": True}).build(timeline, out_dir)
+        self.assertTrue(result.ok, msg=result.error)
+        info = media.probe(result.artifacts[0], self.paths)
+        self.assertEqual((info.width, info.height), CANVAS)
+        self.assertAlmostEqual(info.duration, 1.5 + CLIP_SECONDS, delta=0.4)
+
+    def test_all_still_timeline_has_no_ambient(self) -> None:
+        still = self._still_png("only_still.png")
+        raw = {"name": "still_only", "canvas": {"width": CANVAS[0], "height": CANVAS[1]},
+               "fps": FPS,
+               "video_segments": [{"file": still, "src_dur": 1.0, "still": True}]}
+        timeline = Timeline.from_shotlist(Shotlist.from_dict(raw))
+        out_dir = os.path.join(self.scratch, "out_still_only")
+        result = FFmpegBackend(paths=self.paths,
+                               options={"keep_temp": True}).build(timeline, out_dir)
+        self.assertTrue(result.ok, msg=result.error)
+        self.assertFalse(result.data["ambient"], "静帧没有原声，不该凭空造一条环境声")
+
 
 if __name__ == "__main__":
     unittest.main()

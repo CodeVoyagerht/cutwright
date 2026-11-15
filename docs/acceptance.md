@@ -108,8 +108,29 @@ cutwright build examples\demo\shotlist.json -b jianying -o .tmp-jy --opt encrypt
 ```
 
 镜数、字幕数、音频数、画幅、总时长与写之前一致；`--plain-only` 遇密文按设计报错退出。
-本轮没有剪映手剪的真草稿可读（本机草稿库里只有 `root_meta_info.json`，没有草稿目录），
-所以「读剪映自己写的草稿」这条**未验收**——读的是本工具写出的合法草稿。
+
+**读剪映自己手剪的草稿**（`D:\Jianying\JianyingPro Drafts\11月13日`，48,896 字节，
+本机 `videoeditor.dll` 解开）：
+
+```
+cutwright import "D:\Jianying\JianyingPro Drafts\11月13日" -o real-11-13.json
+读回：11月13日：2 镜 / 9 条字幕 / 1 条音频 / 1280x720 / 18.03s（加密草稿）
+cutwright validate real-11-13.json --check-files
+0 个错误，0 个警告。
+cutwright build real-11-13.json -o out
+构建成功（ffmpeg）：out\11月13日.mp4，1280x720 @ 30.000fps，18.033s
+成片体检 8 项全部 OK（duration_match 差 +0.000s / has_audio / no_long_black / no_long_silence 等）
+```
+
+这一步逼出两个真问题，都已修：
+
+1. **图片段被丢掉**：草稿第一条是 `type: "photo"` 的 PNG（0–3s），旧版 `import` 把它当
+   「没画面」略过，读回来只有 1 镜、时间线凭空短 3 秒，`validate` 只报一条 `W018`。
+   现在图片段按**静帧**（`"still": true`）保留，重建时铺成同样时长。
+2. **朗读音频路径成了假路径**：剪映把朗读存在草稿目录下，路径写成
+   `##_draftpath_placeholder_<uuid>_##\textReading\….wav`。旧版把它当相对当前目录，
+   报出一串指向 `workspace\##_draftpath…` 的 `E051`。现在占位前缀会被还原成草稿目录下的
+   真路径，同一条命令变成 `0 个错误，0 个警告`。
 
 ## 7. 达芬奇（`-b resolve`）
 
@@ -121,7 +142,7 @@ cutwright build examples\demo\shotlist.json -b jianying -o .tmp-jy --opt encrypt
 
 ```
 python -m unittest discover -s tests -t .
-Ran 251 tests in 44.959s
+Ran 268 tests in 29.230s
 OK (skipped=2)
 ```
 

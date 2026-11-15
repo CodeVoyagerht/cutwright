@@ -272,15 +272,20 @@ class FFmpegBackend(Backend):
     def _encode_segment(self, clip: TimelineClip, out_path: str, position: int,
                         total: int, width: int, height: int, fps: float) -> None:
         """把一个镜头切成标准化的 h264 片段（固定尺寸/帧率/像素格式）。"""
-        info = media.probe(clip.source, self.paths)
+        info = None if clip.still else media.probe(clip.source, self.paths)
         chain = self._segment_filter(clip, info, width, height, fps)
         preview = bool(self.options.get("preview", False))
         crf = str(PREVIEW_SEGMENT_CRF if preview else SEGMENT_CRF)
         preset = PREVIEW_PRESET if preview else "medium"
+        if clip.still:
+            # 静帧：一张图铺成 src_dur 长的视频。没有入点，也没法 -ss 到图片里。
+            source_args = ["-loop", "1", "-t", _f(clip.src_dur), "-i", clip.source]
+        else:
+            source_args = ["-ss", _f(clip.src_in), "-t", _f(clip.src_dur),
+                           "-i", clip.source]
         cmd = [
             self.paths.ffmpeg, "-y", "-hide_banner", "-loglevel", "error",
-            "-ss", _f(clip.src_in), "-t", _f(clip.src_dur),
-            "-i", clip.source,
+            *source_args,
             "-filter:v", chain,
             "-an",
             "-c:v", "libx264", "-preset", preset, "-crf", crf,
@@ -297,7 +302,7 @@ class FFmpegBackend(Backend):
                                shot_index=position, shot_name=clip.name,
                                total_shots=total, log_path=self._log_path) from exc
 
-    def _segment_filter(self, clip: TimelineClip, info: media.MediaInfo,
+    def _segment_filter(self, clip: TimelineClip, info: Optional[media.MediaInfo],
                         width: int, height: int, fps: float) -> str:
         """拼一个镜头的滤镜链。顺序按「色彩 → 时间 → 构图」排，不能随意调。
 
@@ -305,12 +310,12 @@ class FFmpegBackend(Backend):
         采样源只有实际像素那么多。
         """
         parts: List[str] = []
-        if info.is_hdr:
+        if info is not None and info.is_hdr:
             parts.append(HDR_TONEMAP)
-        if info.is_full_range:
+        if info is not None and info.is_full_range:
             # 手机/相机常见的 full range 素材直接进 tv range 会过曝。
             parts.append("scale=in_range=full:out_range=tv")
-        if abs(float(clip.speed) - 1.0) > 1e-6:
+        if not clip.still and abs(float(clip.speed) - 1.0) > 1e-6:
             parts.append(f"setpts=PTS/{_f(clip.speed)}")
 
         cx = _f(clip.cx)
@@ -356,18 +361,21 @@ class FFmpegBackend(Backend):
         全部镜头都没有音轨时返回 ``None``（整条片子静音），这是正常情况：
         GIF、屏幕录制、部分 A7S3 视频都可能没有音轨，为此报错没有意义。
         """
-        infos = [media.probe(clip.source, self.paths) for clip in timeline.clips]
-        if not any(info.has_audio for info in infos):
+        infos: List[Optional[media.MediaInfo]] = []
+        for clip in timeline.clips:
+            # 静帧没有音轨，也不该去 ffprobe 一张 png 的时长。
+            infos.append(None if clip.still else media.probe(clip.source, self.paths))
+        if not any(info is not None and info.has_audio for info in infos):
             self._note("所有素材都没有音轨，跳过环境声")
             return None
 
         chunks: List[str] = []
         for clip, info in zip(timeline.clips, infos):
             raw = os.path.join(build_dir, f"amb_{clip.index:03d}.wav")
-            if info.has_audio:
+            if info is not None and info.has_audio:
                 self._extract_ambient(clip, raw, warnings)
             else:
-                # 没音轨的镜头补等长短静音，否则后面每一段都会右移，
+                # 没音轨的镜头（含静帧）补等长短静音，否则后面每一段都会右移，
                 # 环境声就和画面对不上了。
                 self._silence(clip.tl_dur, raw)
             chunks.append(self._level_ambient(raw, clip, build_dir))
@@ -792,7 +800,8 @@ def _segment_digest(clip: TimelineClip, width: int, height: int, fps: float,
     except OSError:
         stat_key = "missing"
     payload = "\n".join([
-        f"v1", os.path.abspath(clip.source), stat_key,
+        f"v2", os.path.abspath(clip.source), stat_key,
+        "still" if getattr(clip, "still", False) else "motion",
         _f(clip.src_in), _f(clip.src_dur), _f(getattr(clip, "speed", 1.0)),
         str(getattr(clip, "zoom", "none")),
         _f(float(getattr(clip, "zoom_amount", 0.0))),

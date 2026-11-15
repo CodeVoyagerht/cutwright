@@ -229,6 +229,15 @@ class _Case(unittest.TestCase):
     """
 
     def setUp(self) -> None:
+        # 每个用例都从「两个脚本 API 环境变量不存在」开始：bridge.prepare_env()
+        # 会往 os.environ 里写 RESOLVE_SCRIPT_API，别的测试模块也会调它；不隔离
+        # 的话，``scripting_dir()`` 会优先读环境变量，于是「部件缺失」的用例会
+        # 拿到本机真实的 ProgramData 路径而误判为可用（全量 discover 时踩过）。
+        patcher = mock.patch.dict(os.environ, {}, clear=False)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        os.environ.pop("RESOLVE_SCRIPT_API", None)
+        os.environ.pop("RESOLVE_SCRIPT_LIB", None)
         self.tmp = _scratch_dir("resolve_")
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
         self.out_dir = os.path.join(self.tmp, "out")
@@ -330,10 +339,10 @@ class BridgeTests(_Case):
         self.assertIsNone(bridge_mod._DVR)
 
     def test_stub_module_available_and_connect(self) -> None:
-        """把替身模块塞进 ``sys.modules``，验证成功路径与自动补环境变量。
+        """替身模块路径：``available()`` 只看部件、``connect()`` 才 import。
 
-        这同时证明了 ``available()`` **不要求 Resolve 在运行**：
-        替身模块能 import 就算可用，``connect()`` 才会去 ``scriptapp()``。
+        这同时证明了两件事：``available()`` 不要求 Resolve 在运行（部件齐备即
+        True），以及它**不 import**（``_DVR`` 在 connect 之前一直是空的）。
         """
         scripting = os.path.join(self.tmp, "Scripting")
         os.makedirs(os.path.join(scripting, "Modules"), exist_ok=True)
@@ -359,14 +368,109 @@ class BridgeTests(_Case):
             os.environ.pop("RESOLVE_SCRIPT_API", None)
             os.environ.pop("RESOLVE_SCRIPT_LIB", None)
             self.assertTrue(bridge.available())
-            self.assertIs(bridge_mod._DVR, stub)             # 缓存生效
+            self.assertIsNone(bridge_mod._DVR)               # available 不 import
             self.assertEqual(os.environ["RESOLVE_SCRIPT_API"], scripting)
+            self.assertNotIn("RESOLVE_SCRIPT_LIB", os.environ)  # 不自动注入
 
-            resolve = bridge.connect()
+            # connect 会先起子进程预检。测试里必须打桩：真的去 import 本机的
+            # fusionscript.dll 会把测试进程直接打死（0xC0000005）。
+            with mock.patch.object(bridge_mod.ResolveBridge, "probe_import",
+                                   return_value=(True, "")):
+                resolve = bridge.connect()
             self.assertIs(resolve, fake.resolve)
+            self.assertIs(bridge_mod._DVR, stub)             # 这时才缓存
             stub.scriptapp.assert_called_once_with("Resolve")  # type: ignore[attr-defined]
             self.assertEqual(bridge.version(), "20.3.1")
             self.assertIs(bridge.is_studio(), True)
+
+    def test_available_does_not_import_the_real_module(self) -> None:
+        """部件齐备 → ``available()`` 为 True，但一个字节都不 import。
+
+        防回归用：本机实测 Resolve 没在运行时 import fusionscript 会让进程以
+        0xC0000005 退出，``doctor`` 只要 import 一次就可能整条命令崩掉。
+        """
+        scripting = os.path.join(self.tmp, "ScriptingLazy")
+        modules = os.path.join(scripting, "Modules")
+        os.makedirs(modules, exist_ok=True)
+        with open(os.path.join(modules, "DaVinciResolveScript.py"), "w",
+                  encoding="utf-8") as fh:
+            fh.write("raise AssertionError('available() 不该 import 这个模块')\n")
+        lib = os.path.join(self.tmp, "fusionscript.dll")
+        with open(lib, "wb") as fh:
+            fh.write(b"MZ")                      # 只要是个文件，内容无所谓
+
+        bridge_mod.reset_cache()
+        self.addCleanup(bridge_mod.reset_cache)
+        self.addCleanup(sys.modules.pop, "DaVinciResolveScript", None)
+        sys.modules.pop("DaVinciResolveScript", None)
+        bridge = bridge_mod.ResolveBridge(
+            paths=config.Paths(resolve_scripting=scripting))
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("RESOLVE_SCRIPT_API", None)
+            os.environ.pop("RESOLVE_SCRIPT_LIB", None)
+            with mock.patch.object(bridge, "fusionscript_lib", return_value=lib):
+                self.assertTrue(bridge.available())
+        self.assertIsNone(bridge_mod._DVR)
+        self.assertNotIn("DaVinciResolveScript", sys.modules)
+
+    def test_available_false_when_module_file_missing(self) -> None:
+        """Modules 目录在、但 ``DaVinciResolveScript.py`` 不在 → False + 说明。"""
+        scripting = os.path.join(self.tmp, "ScriptingEmpty")
+        os.makedirs(os.path.join(scripting, "Modules"), exist_ok=True)
+        bridge_mod.reset_cache()
+        self.addCleanup(bridge_mod.reset_cache)
+        self.addCleanup(sys.modules.pop, "DaVinciResolveScript", None)
+        sys.modules.pop("DaVinciResolveScript", None)
+        bridge = bridge_mod.ResolveBridge(
+            paths=config.Paths(resolve_scripting=scripting))
+        self.assertFalse(bridge.available())
+        self.assertIn("DaVinciResolveScript.py", bridge.last_error)
+
+    def test_probe_crash_becomes_actionable_error(self) -> None:
+        """子进程 0xC0000005 崩溃 → 翻译成人话，且父进程绝不 import。"""
+        bridge_mod.reset_cache()
+        self.addCleanup(bridge_mod.reset_cache)
+        proc = mock.Mock(returncode=-1073741819, stdout=b"", stderr=b"")
+        bridge = bridge_mod.ResolveBridge(paths=config.Paths())
+        with mock.patch.object(bridge_mod.subprocess, "run", return_value=proc):
+            ok, detail = bridge.probe_import()
+            self.assertFalse(ok)
+            self.assertIn("0xC0000005", detail)
+            self.assertIn("崩溃", detail)
+
+            with mock.patch.object(bridge_mod.ResolveBridge, "_load_dvr",
+                                   side_effect=AssertionError("探针失败时不许 import")):
+                with self.assertRaises(bridge_mod.ResolveError) as ctx:
+                    bridge.connect()
+        self.assertIn("0xC0000005", str(ctx.exception))
+        self.assertIn("没在运行", str(ctx.exception))
+        self.assertIsNone(bridge_mod._DVR)
+
+    def test_probe_import_failure_points_at_install(self) -> None:
+        """探针里 import 失败（故意 exit 3）→ 指向安装/环境变量，而不是崩溃。"""
+        proc = mock.Mock(returncode=3,
+                         stdout=b"IMPORT_FAILED ImportError: DLL load failed\n",
+                         stderr=b"")
+        bridge = bridge_mod.ResolveBridge(paths=config.Paths())
+        with mock.patch.object(bridge_mod.subprocess, "run", return_value=proc):
+            ok, detail = bridge.probe_import()
+        self.assertFalse(ok)
+        self.assertIn("import DaVinciResolveScript 失败", detail)
+        self.assertIn("DLL load failed", detail)
+
+    def test_probe_scriptapp_empty_means_not_running(self) -> None:
+        """探针连上了但 ``scriptapp`` 返回空 → 「没在运行」那一档。"""
+        proc = mock.Mock(returncode=0,
+                         stdout=b"IMPORT_OK\nCONNECT_EMPTY\n", stderr=b"")
+        bridge = bridge_mod.ResolveBridge(paths=config.Paths())
+        with mock.patch.object(bridge_mod.subprocess, "run", return_value=proc):
+            ok, detail = bridge.probe_import()
+            self.assertFalse(ok)
+            self.assertIn("scriptapp", detail)
+            with self.assertRaises(bridge_mod.ResolveError) as ctx:
+                bridge.connect()
+        self.assertIn("没在运行", str(ctx.exception))
+        self.assertIn("External scripting", str(ctx.exception))
 
     def test_connect_reports_actionable_hint(self) -> None:
         """``scriptapp()`` 返回空 → ResolveError 里带「没启动/免费版/偏好项」。"""
@@ -384,8 +488,10 @@ class BridgeTests(_Case):
         bridge = bridge_mod.ResolveBridge(
             paths=config.Paths(resolve_scripting=scripting))
 
-        with self.assertRaises(bridge_mod.ResolveError) as ctx:
-            bridge.connect()
+        with mock.patch.object(bridge_mod.ResolveBridge, "probe_import",
+                               return_value=(True, "")):
+            with self.assertRaises(bridge_mod.ResolveError) as ctx:
+                bridge.connect()
         text = str(ctx.exception)
         self.assertIn("没在运行", text)
         self.assertIn("External scripting", text)

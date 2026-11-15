@@ -273,14 +273,79 @@ def _candidate_dirs() -> List[str]:
     return cands
 
 
-def find_install_dir(install_dir: Optional[str] = None) -> Optional[str]:
-    """找剪映安装目录（含 ``videoeditor.dll`` 的那个）。
+def iter_install_dirs() -> List[str]:
+    """按尝试顺序列出可能藏有 ``videoeditor.dll`` 的目录。
+
+    环境变量指定的目录永远排最前（用户显式指定优先于自动探测），其余按版本号
+    从高到低。这里只回答顺序，不判断 DLL 是否真能用——那是
+    :func:`find_install_dir` 的事。
+    """
+    env_dirs: List[str] = []
+    for env in (ENV_INSTALL_DIR,) + _ENV_COMPAT:
+        raw = os.environ.get(env)
+        if not raw:
+            continue
+        path = os.path.abspath(os.path.expanduser(os.path.expandvars(raw)))
+        if os.path.isfile(path):
+            path = os.path.dirname(path)
+        if path not in env_dirs:
+            env_dirs.append(path)
+
+    others = [d for d in _candidate_dirs() if d not in env_dirs]
+    others.sort(key=_version_key, reverse=True)
+    return env_dirs + others
+
+
+#: 自检用的明文：足够小，且形状像草稿内容（``encrypt`` 需要合法 JSON）。
+_PROBE_PLAIN = b'{"id":"00000000-0000-0000-0000-000000000000","version":360000,"new_version":"189.0.0"}'
+_PROBE_CACHE: Dict[str, bool] = {}
+_PROBE_LOCK = threading.Lock()
+
+
+def _probe_dir(install_dir: str) -> bool:
+    """自检某个安装目录的 DLL 是否真能加密 + 解密（结果缓存）。
+
+    为什么需要自检：本机实测 ``11.7.0.14652`` 的 ``videoeditor.dll`` 能正常
+    导出符号，但对 11.6 写出的草稿解密返回空、连自己的加密结果都解不开；
+    只按版本号取最高会选到它，于是所有加解密都失败。以「能完成一次
+    encrypt→decrypt 回环」作为可用判据，才能挑到真正能用的那份。
+    """
+    key = os.path.normcase(os.path.abspath(install_dir))
+    with _PROBE_LOCK:
+        if key in _PROBE_CACHE:
+            return _PROBE_CACHE[key]
+        ok = False
+        probe: Optional[JianyingCrypto] = None
+        try:
+            probe = JianyingCrypto(install_dir)
+            probe.load()
+            enc = probe.encrypt_bytes(_PROBE_PLAIN)
+            ok = probe.decrypt_bytes(enc) == _PROBE_PLAIN
+        except Exception:
+            ok = False
+        finally:
+            if probe is not None:
+                try:
+                    probe.close()
+                except Exception:
+                    pass
+        _PROBE_CACHE[key] = ok
+        return ok
+
+
+def find_install_dir(install_dir: Optional[str] = None, *,
+                     probe: bool = True) -> Optional[str]:
+    """找剪映安装目录（含 ``videoeditor.dll`` 且加解密真能用的那个）。
 
     优先级：显式参数 > ``CUTWRIGHT_JY_INSTALL`` / ``JY_INSTALL_DIR`` / ``JY_DLL``
     > ``%LOCALAPPDATA%\\JianyingPro\\Apps`` 下的版本目录（按版本号从高到低）
     > ``Program Files`` 里的常见路径。
 
-    返回 ``None`` 表示没找到——调用方据此走明文降级，**不要**抛异常。
+    ``probe=True``（默认）时逐个候选做一次 encrypt→decrypt 自检：同机上可能
+    并存多个剪映版本，其中有的版本 DLL 读不了另一版本的草稿。显式传入的目录
+    不做自检（用户说了算）。
+
+    返回 ``None`` 表示没有可用目录——调用方据此走明文降级，**不要**抛异常。
     """
     if install_dir:
         path = os.path.abspath(os.path.expanduser(install_dir))
@@ -288,17 +353,22 @@ def find_install_dir(install_dir: Optional[str] = None) -> Optional[str]:
             path = os.path.dirname(path)
         return path if os.path.isfile(os.path.join(path, DLL_NAME)) else None
 
-    found: List[str] = []
-    for cand in _candidate_dirs():
+    usable: List[str] = []
+    for cand in iter_install_dirs():
         try:
             if os.path.isfile(os.path.join(cand, DLL_NAME)):
-                found.append(cand)
+                usable.append(cand)
         except OSError:
             continue
-    if not found:
+    if not usable:
         return None
-    found.sort(key=_version_key, reverse=True)
-    return found[0]
+    if not probe:
+        return usable[0]
+    for cand in usable:
+        if _probe_dir(cand):
+            return cand
+    return None
+
 
 
 # --------------------------------------------------------------------------- #

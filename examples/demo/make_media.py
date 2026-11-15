@@ -75,9 +75,14 @@ def main(argv=None) -> int:
         if os.path.exists(path) and not args.force:
             print(f"  [skip] {name} 已存在")
             continue
-        # 每段用不同的色相与运动方向，肉眼能分清是哪一镜
+        # 每段用不同的色相与运动方向，肉眼能分清是哪一镜。
+        # 别用 "i * 常数" 直接当颜色：i=0 时是纯黑，第一镜就成了黑场，
+        # 既难看又会让 qc 的黑场检查报警。这里固定给一个中调起点。
+        r = 40 + (i * 37) % 130
+        g = 40 + (i * 61) % 110
+        b = 40 + (i * 89) % 140
         hue = (i * 47) % 360
-        src = (f"color=c=0x{(i * 0x1a2b3c) % 0xffffff:06x}:s={w}x{h}:d={dur}:r=30,"
+        src = (f"color=c=0x{r:02x}{g:02x}{b:02x}:s={w}x{h}:d={dur}:r=30,"
                f"hue=H={hue},"
                f"drawbox=x='if(eq(mod(t,4),0),0,(t*{w}/max({dur},1))-{w})'"
                f":y=ih/3:w=iw/4:h=ih/3:color=white@0.55:t=fill,"
@@ -92,16 +97,25 @@ def main(argv=None) -> int:
         run(cmd)
         print(f"  [ok]   {name}  {w}x{h} {dur}s  {desc}")
 
-    # 透明 PNG（叠加层用）：一个圆角边框，能明显看出被烧进画面
+    # 叠加层用的透明 PNG：两层描边的画框，中间必须是**真透明**——
+    # 不透明的话它会把画面挡成一个黑窟窿（这是实测踩过的）。
+    # 用 Pillow 而不是 ffmpeg 的 lavfi：`color=c=black@0.0` 出来的图
+    # 实测是 RGBA 但 alpha 全 255，透明区被写成不透明黑。
     png = os.path.join(out, "frame.png")
     if not os.path.exists(png) or args.force:
-        cmd = [ffmpeg, "-y", "-hide_banner", "-loglevel", "error",
-               "-f", "lavfi", "-i", "color=c=black@0.0:s=900x1500:d=1",
-               "-vf", "drawbox=x=8:y=8:w=884:h=1484:color=white@0.85:t=10,"
-                      "drawbox=x=24:y=24:w=852:h=1452:color=gold@0.6:t=4",
-               "-frames:v", "1", png]
-        run(cmd)
-        print("  [ok]   frame.png 900x1500 透明边框")
+        try:
+            from PIL import Image, ImageDraw
+        except ImportError:  # pragma: no cover - 环境缺依赖时给出可执行的指引
+            raise SystemExit(
+                "生成 frame.png 需要 Pillow：\n"
+                "  python -m pip install pillow\n"
+                "（或 python -m pip install -e \".[render]\"）")
+        frame = Image.new("RGBA", (900, 1500), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(frame)
+        draw.rectangle([8, 8, 891, 1491], outline=(255, 255, 255, 216), width=10)
+        draw.rectangle([24, 24, 875, 1475], outline=(212, 175, 55, 153), width=4)
+        frame.save(png)
+        print("  [ok]   frame.png 900x1500 透明画框")
 
     bgm = os.path.join(out, "bgm.mp3")
     if not os.path.exists(bgm) or args.force:

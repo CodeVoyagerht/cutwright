@@ -21,7 +21,7 @@ from typing import Dict, List, Sequence, Tuple
 
 from PIL import Image, ImageColor, ImageDraw, ImageFont
 
-from .schema import TextStyle
+from .schema import KEYWORD_SEPARATORS, TextStyle
 
 __all__ = ["FontNotFound", "find_font", "render_text_png", "wrap_text"]
 
@@ -29,9 +29,14 @@ __all__ = ["FontNotFound", "find_font", "render_text_png", "wrap_text"]
 # 省得每个字都解析一次 "＃RRGGBB"。
 _RGBA = Tuple[int, int, int, int]
 
-# 关键词分隔符。schema.TextSegment 也是按第一次出现的 "|" 切分，
-# 两处必须一致，否则「显示的字」和「算颜色的字」会错位。
-_SEPARATOR = "|"
+# 排版版本号。改了任何影响像素的逻辑（折行规则、描边、关键字着色）就 +1：
+# 字幕图按「文案 + 样式」做缓存文件名，不带上这个号，升级后旧图会被继续复用，
+# 于是「代码改了、成片没变」——比多渲几张 PNG 难查得多。
+RENDER_VERSION = 2
+
+# 关键词分隔符（半角 + 全角）。和 schema.KEYWORD_SEPARATORS 同源——
+# 两处若不一致，「显示的字」和「算颜色的字」就会错位。
+_SEPARATOR = KEYWORD_SEPARATORS
 
 # 找不到字体时的候选表。Windows 排在前面（本项目的绝大多数用户是剪映用户），
 # 但表本身是跨平台的：``os.path.exists`` 判断一个不存在的路径只是一次失败的
@@ -152,9 +157,12 @@ def wrap_text(text: str, max_chars: int) -> list[str]:
 
 
 def _strip_separator(text: str) -> str:
-    """去掉第一个 ``|``（分隔符），保留后面可能出现的一切字符。"""
-    head, sep, tail = (text or "").partition(_SEPARATOR)
-    return head + tail if sep else head
+    """去掉**所有**分隔符，剩下的就是屏幕上该出现的字。
+
+    只去第一个是不够的：``"a|b|c"`` 去掉第一个后还剩一根竖线，用户会看到
+    屏幕上凭空多出一条杠——分隔符是给渲染器看的，不是给观众看的。
+    """
+    return "".join(ch for ch in (text or "") if ch not in _SEPARATOR)
 
 
 def _is_word_char(ch: str) -> bool:
@@ -253,15 +261,22 @@ def _parse_color(value: str, default: _RGBA) -> _RGBA:
 
 
 def _styled_chars(text: str) -> List[Tuple[str, str]]:
-    """把文案切成 (字符, 颜色标签) 序列；只有第一个 ``|`` 是分隔符。
+    """把文案切成 (字符, 颜色标签) 序列，分隔符本身不进入序列。
+
+    规则是**交替**的：分隔符之外是 ``body``，第一对分隔符之间是 ``kw``，
+    第二对之间又回到 ``body``——所以 ``"自动裁剪｜变速｜补增益"`` 只高亮
+    「变速」，而不是把后半个句子整片刷黄。
 
     这里存的是标签（"body" / "kw"）而不是 RGBA 元组：折行只关心字符顺序，
     颜色在画的时候查表，序列本身保持轻量、可比较、出错时好打印。
     """
-    head, sep, tail = (text or "").partition(_SEPARATOR)
-    out: List[Tuple[str, str]] = [(ch, "body") for ch in head]
-    if sep:
-        out.extend((ch, "kw") for ch in tail)
+    out: List[Tuple[str, str]] = []
+    in_keyword = False
+    for ch in text or "":
+        if ch in _SEPARATOR:
+            in_keyword = not in_keyword
+            continue
+        out.append((ch, "kw" if in_keyword else "body"))
     return out
 
 

@@ -1042,6 +1042,7 @@ def install_draft(build_dir: str, *, drafts_root: str, name: str,
 
     plan = {
         "ok": False, "action": "install", "dry_run": bool(dry_run),
+        "installed": False,
         "name": name, "target": target, "drafts_root": drafts_root,
         "build_dir": build_dir, "exists": exists, "known": known,
         "update_index": bool(update_index), "index": index_path or "",

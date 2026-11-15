@@ -4,15 +4,16 @@
 现场合成。原因是素材一旦依赖外部文件，测试在别人的机器上就会直接跳过或者
 失败，而这个后端的价值恰恰是「能不能把一条时间线渲染成片」，必须真的跑一遍。
 
-临时目录放在仓库根目录而不是系统临时目录，因为本机沙箱只对工作区放行写入，
-且 ``tempfile.mkdtemp`` 会建出 0700 的目录，随后连自己都写不进去；因此改用
-``os.makedirs`` 在仓库下开一个带进程号的目录。
+临时目录优先用系统临时目录，用不上再退回仓库内的 ``tests/``、仓库根目录：
+``tempfile.mkdtemp`` 会建出 0700 的目录（连自己都写不进去，某些沙箱下还会
+删不掉），所以这里一律用 ``os.makedirs`` 建目录并做一次写入探测。
 """
 
 from __future__ import annotations
 
 import os
 import shutil
+import tempfile
 import time
 import unittest
 from typing import List, Optional, Tuple
@@ -88,13 +89,15 @@ def _repo_root() -> str:
 
 
 def _make_scratch(prefix: str) -> str:
-    """在仓库根目录下开一个本次运行专用的临时目录。
+    """开一个本次运行专用的临时目录，返回绝对路径。
 
     名字里带进程号和纳秒时间戳，保证并行跑测试时互不干扰；用 ``os.makedirs``
-    而不是 ``tempfile.mkdtemp``，否则目录 ACL 会变成 0700 而写不进去。
+    而不是 ``tempfile.mkdtemp``，否则目录 ACL 会变成 0700 而写不进去。系统临时
+    目录不可用时退回仓库内的 ``tests/`` 与仓库根目录，让测试在受限沙箱里也能跑。
     """
     name = f"{prefix}_{os.getpid()}_{time.time_ns() % 10 ** 9}"
-    for base in (_repo_root(), os.path.join(_repo_root(), "tests")):
+    candidates = (tempfile.gettempdir(), os.path.join(_repo_root(), "tests"), _repo_root())
+    for base in candidates:
         path = os.path.join(base, name)
         try:
             os.makedirs(path, exist_ok=False)
@@ -109,7 +112,7 @@ def _make_scratch(prefix: str) -> str:
             shutil.rmtree(path, ignore_errors=True)
             continue
         return path
-    raise unittest.SkipTest("找不到可写的临时目录（仓库根目录也不可写）")
+    raise unittest.SkipTest("找不到可写的临时目录（系统临时目录与仓库都不可写）")
 
 
 class BackendContractTest(unittest.TestCase):

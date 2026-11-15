@@ -500,6 +500,7 @@ class ResolveBridge:
         用子进程预检去回答。
         """
         if _DVR is not None or "DaVinciResolveScript" in sys.modules:
+            self.prepare_env()
             self.last_error = ""
             return True
         info = self.prepare_env()
@@ -562,15 +563,20 @@ class ResolveBridge:
             return True, f"跳过预检：起不了子进程（{type(exc).__name__}: {exc}）"
         out = (proc.stdout or b"").decode("utf-8", "replace")
         err = (proc.stderr or b"").decode("utf-8", "replace")
+        # 先看探针自己吐的标记：import 失败时探针是**故意**以 3 退出的，
+        # 先判退出码会把它误报成「崩溃」。
+        if "IMPORT_FAILED" in out:
+            line = _first_line_with(out, "IMPORT_FAILED")
+            return False, f"import DaVinciResolveScript 失败：{line}"
         if proc.returncode != 0:
             return False, self._describe_exit(proc.returncode, out, err)
         if "CONNECT_OK" in out:
             return True, ""
         if "CONNECT_EMPTY" in out:
             return False, "子进程里 import 成功，但 scriptapp('Resolve') 返回空"
-        if "IMPORT_FAILED" in out:
-            line = _first_line_with(out, "IMPORT_FAILED")
-            return False, f"子进程里 import 失败：{line}"
+        if "SCRIPTAPP_FAILED" in out:
+            line = _first_line_with(out, "SCRIPTAPP_FAILED")
+            return False, f"子进程里 scriptapp('Resolve') 抛异常：{line}"
         return False, ("子进程预检没有给出可识别的结论"
                        f"（退出码 {proc.returncode}，输出 {out.strip()[:200]!r}）")
 
@@ -598,7 +604,12 @@ class ResolveBridge:
         ok, detail = self.probe_import()
         if not ok:
             self.last_error = detail
-            hint = HINT_NOT_RUNNING if "scriptapp" in detail else HINT_CRASH
+            if "崩溃" in detail:
+                hint = HINT_CRASH
+            elif "scriptapp" in detail:
+                hint = HINT_NOT_RUNNING
+            else:
+                hint = HINT_INSTALL
             raise ResolveError(f"连不上 DaVinci Resolve：{detail}", hint=hint)
         dvr = self._load_dvr()
         scriptapp = getattr(dvr, "scriptapp", None)

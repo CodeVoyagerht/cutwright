@@ -167,8 +167,12 @@ class WrapTextTest(unittest.TestCase):
         # "abcd" 4 格正合适；若分隔符占格就会被挤成两行。
         self.assertEqual(wrap_text("ab|cd", 4), ["abcd"])
 
-    def test_only_first_separator_is_special(self) -> None:
-        self.assertEqual(wrap_text("a|b|c", 10), ["ab|c"])
+    def test_every_separator_is_invisible(self) -> None:
+        # 全角/半角分隔符都只是「换色标记」，一个都不该出现在折行结果里。
+        # schema.py 的 TextSegment 也是这么切的：偶数段正文、奇数段关键词，
+        # 所以 "a|b|c" 里两根竖线都不显示，剩下的就是 "abc"。
+        self.assertEqual(wrap_text("a|b|c", 10), ["abc"])
+        self.assertEqual(wrap_text("自动裁剪｜变速｜补增益", 20), ["自动裁剪变速补增益"])
 
     def test_empty_text_returns_no_lines(self) -> None:
         self.assertEqual(wrap_text("", 10), [])
@@ -237,6 +241,19 @@ class RenderTextPngTest(TextTestCase):
         image = self.load(self.render("前|后", style))
         green = lambda color: color[1] >= 200 and color[0] <= 120 and color[2] <= 120
         self.assertTrue(_has_color(image, green), "keyword_color 应生效")
+
+    def test_second_separator_returns_to_body_color(self) -> None:
+        # schema.TextSegment 把文案切成「正文 + 关键词段列表」，即偶数段正文、
+        # 奇数段关键词，所以两根竖线之间才高亮：甲(白) | 乙(黄) | 丙(白)。
+        image = self.load(self.render("甲|乙|丙", TextStyle(font_height_px=80)))
+        self.assertTrue(_has_color(image, _is_keyword_yellow))
+        bbox = _alpha_bbox(image)
+        self.assertIsNotNone(bbox)
+        left, top, right, bottom = bbox
+        tail_width = max(1, (right - left) // 5)
+        tail = image.crop((right - tail_width, top, right, bottom))
+        self.assertTrue(_has_color(tail, _is_white),
+                        "第二个分隔符之后的文字应回到正文色，而不是整段刷黄")
 
     def test_stroke_produces_dark_pixels(self) -> None:
         style = TextStyle(font_height_px=80, stroke_width_px=8, stroke_color="#000000")

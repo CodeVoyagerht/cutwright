@@ -16,6 +16,7 @@ import os
 import shutil
 import unittest
 import uuid
+from typing import List
 
 from cutwright.backends.jianying import JianyingBackend
 from cutwright.backends.jianying import crypto as jy_crypto
@@ -63,21 +64,31 @@ BASE_TMP = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                         ".tmp-jianying")
 
 
+#: 本进程建过的临时目录（tearDownModule 只清这些）。
+_MADE: List[str] = []
+
+
 def _mkdtemp(prefix: str) -> str:
     """在仓库内的临时根下建一个测试目录。
 
     刻意不用 :func:`tempfile.mkdtemp`：它按 ``0o700`` 建目录，在某
     些 Windows 受限环境里会落成拒绝 ACE，之后写文件直接 PermissionError。
+
+    目录名里带进程号：两个测试进程同时跑时（CI、并行跑不同模块），谁都不该
+    删掉对方正在用的目录。
     """
     os.makedirs(BASE_TMP, exist_ok=True)
-    path = os.path.join(BASE_TMP, prefix + uuid.uuid4().hex[:12])
+    path = os.path.join(
+        BASE_TMP, "%s%d-%s" % (prefix, os.getpid(), uuid.uuid4().hex[:8]))
     os.makedirs(path, exist_ok=True)
+    _MADE.append(path)
     return path
 
 
 def tearDownModule() -> None:
-    """整个模块跑完后清掉临时根。"""
-    shutil.rmtree(BASE_TMP, ignore_errors=True)
+    """只清本进程建过的临时目录，不碰临时根（可能有别的进程在用）。"""
+    for path in _MADE:
+        shutil.rmtree(path, ignore_errors=True)
 
 
 def _touch(path: str, payload: bytes = b"fake") -> str:
@@ -245,8 +256,11 @@ class TestDraftContent(unittest.TestCase):
                     second = payload["styles"][1]["fill"]["content"]["solid"]["color"]
                     self.assertNotEqual(first, second, "关键词换色没生效")
                     self.assertEqual(first, [1.0, 1.0, 1.0], "正文应为白色")
+                    # 实现里 hex -> [0,1] 会保留 6 位小数，这里按同样精度比对
                     self.assertEqual(
-                        second, [255 / 255.0, 213 / 255.0, 74 / 255.0],
+                        second,
+                        [round(255 / 255.0, 6), round(213 / 255.0, 6),
+                         round(74 / 255.0, 6)],
                         "关键词色应为 #FFD54A")
         self.assertGreaterEqual(keyword, 1, "至少要有一条带 | 换色的字幕")
 

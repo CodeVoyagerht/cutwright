@@ -680,6 +680,9 @@ def _style_digest(item: TimelineText) -> str:
     """
     style = item.style
     payload = "|".join([
+        # 排版版本号必须进摘要：只摘要「文案 + 样式」的话，升级渲染器之后
+        # 同样的文件名会命中旧 PNG，成片看起来「代码改了却没变化」。
+        f"v{text.RENDER_VERSION}",
         item.text or "",
         _f(float(getattr(style, "font_height_px", 0.0)), 2),
         str(getattr(style, "color", "")),

@@ -21,7 +21,7 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass, field
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 __all__ = [
     "Canvas",
@@ -42,9 +42,32 @@ __all__ = [
 
 SCHEMA_VERSION = "1.0"
 
+# 关键词分隔符：半角与全角都认。中文输入法打出来的是全角「｜」，
+# 只认半角就等于让一半人在成片里看到一根竖线。
+KEYWORD_SEPARATORS = "|｜"
+
 # 校验等级：error 表示后端一定会产出坏结果，warn 表示可疑但可渲染。
 ERROR = "error"
 WARN = "warn"
+
+
+def split_keywords(text: str) -> Tuple[str, List[str]]:
+    """按分隔符把文案切成「常规段 + 关键词段列表」。
+
+    返回 ``(第一段, [关键词段...])``：``"a|b"`` → ``("a", ["b"])``，
+    ``"a|b|c"`` → ``("a", ["b"])``（第三段是常规色，只影响渲染，见 ``text.py``）。
+    没有分隔符时返回 ``(原文, [])``。
+    """
+    parts: List[str] = []
+    cur: List[str] = []
+    for ch in text or "":
+        if ch in KEYWORD_SEPARATORS:
+            parts.append("".join(cur))
+            cur = []
+        else:
+            cur.append(ch)
+    parts.append("".join(cur))
+    return parts[0], parts[1::2]
 
 
 # --------------------------------------------------------------------------- #
@@ -175,7 +198,13 @@ class VideoSegment:
 
 @dataclass
 class TextSegment:
-    """字幕 / 花字 / 标题。``|`` 之后的部分在剪映里是关键词高亮色。"""
+    """字幕 / 花字 / 标题。关键词用分隔符括起来，渲染成高亮色。
+
+    分隔符同时接受半角 ``|`` 和全角 ``｜``——中文输入法打出来的是后者，
+    只认一个就等于让一半人在屏幕上看到一根竖线。规则是**交替**的：
+    分隔符之外是常规色，第一对分隔符之间是高亮色，第二对之间又回到常规色……
+    ``"自动裁剪｜变速｜补增益"`` → 常规「自动裁剪」+ 高亮「变速」+ 常规「补增益」。
+    """
 
     text: str = ""
     tl_start: Optional[float] = None
@@ -202,14 +231,14 @@ class TextSegment:
 
     @property
     def head(self) -> str:
-        """``|`` 前面（常规色）的部分。"""
-        return self.text.split("|", 1)[0]
+        """第一个分隔符前面（常规色）的部分。"""
+        return split_keywords(self.text)[0]
 
     @property
     def keyword(self) -> str:
-        """``|`` 后面（关键词色）的部分，没有则为空。"""
-        parts = self.text.split("|", 1)
-        return parts[1] if len(parts) > 1 else ""
+        """第一对分隔符之间（关键词色）的部分，没有则为空。"""
+        segments = split_keywords(self.text)[1]
+        return segments[0] if segments else ""
 
 
 @dataclass

@@ -35,9 +35,10 @@ REPORT_SUFFIX = ".resolve.report.json"
 class ResolveBackend(Backend):
     """生成达芬奇 Resolve 时间线。
 
-    可用性判断走 :meth:`ResolveBridge.available`：脚本模块能 import 就算可用，
-    **不要求 Resolve 正在运行**（那是 build 时才知道的事，运行中也可能有
-    没打开工程的空转状态）。真正的连接问题在 ``build()`` 里变成
+    可用性判断走 :meth:`ResolveBridge.available`：脚本模块与 fusionscript 库
+    **部件齐备**就算可用，它刻意**不 import** 那个模块——本机实测在 Resolve
+    没运行时 import ``fusionscript`` 会让进程以 0xC0000005 直接退出，``doctor``
+    不能冒这个险。真正的连接问题在 ``build()`` 里变成
     ``BuildResult.ok = False``，而不是让整条流水线崩掉。
     """
 
@@ -76,6 +77,8 @@ class ResolveBackend(Backend):
                                ("lut_dir", "LUT 目录"),
                                ("bundled_python", "Resolve 自带 Python")):
                 lines.append(f"  {label}: {info.get(key) or '未找到'}")
+        if info:
+            lines.extend(self._env_suggestions(info))
         lines.append(
             "请依次检查："
             "1) 装的是 DaVinci Resolve Studio（免费版只有应用内脚本，外部 Python 调不到）；"
@@ -135,6 +138,26 @@ class ResolveBackend(Backend):
                            warnings=list(report.get("warnings") or []))
 
     # -- 内部 -------------------------------------------------------------- #
+    @staticmethod
+    def _env_suggestions(info: Dict[str, Any]) -> List[str]:
+        """把探测到的路径翻译成「复制粘贴就能用」的环境变量建议。
+
+        只给建议、不替用户设：``RESOLVE_SCRIPT_LIB`` 一旦写进环境变量，在
+        Resolve 没运行时下一次 import 就会把进程打崩（0xC0000005），这个决定
+        必须由用户在自己确认 Resolve 已启动之后做。本机就是这种布局——
+        Resolve 装在 ``D:\\DaVinci Resolve``，官方默认路径下没有
+        ``fusionscript.dll``，所以不设这个变量脚本 API 永远加载不起来。
+        """
+        tips: List[str] = []
+        scripting = info.get("scripting")
+        if scripting and os.environ.get("RESOLVE_SCRIPT_API") != scripting:
+            tips.append(f"  建议设置：RESOLVE_SCRIPT_API={scripting}")
+        lib = info.get("lib")
+        if lib and os.environ.get("RESOLVE_SCRIPT_LIB") != lib:
+            tips.append(f"  建议设置：RESOLVE_SCRIPT_LIB={lib}"
+                        "（先启动 Resolve 再设；没启动时 import 会崩）")
+        return tips
+
     def _failure(self, out_dir: str, timeline: "Timeline", exc: BaseException,
                  hint: str = "") -> BuildResult:
         """把异常整理成可操作的 ``BuildResult``（并且**不写文件**）。"""
@@ -145,6 +168,10 @@ class ResolveBackend(Backend):
             diagnostics = self.bridge.diagnose()
         except Exception:
             diagnostics = {}
+        if diagnostics:
+            extra = self._env_suggestions(diagnostics)
+            if extra:
+                message = message + "\n" + "\n".join(line.strip() for line in extra)
         data: Dict[str, Any] = {
             "timeline_name": timeline.name,
             "error": message,

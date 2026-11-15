@@ -386,35 +386,88 @@ class FFmpegBuildTest(unittest.TestCase):
                 self.assertEqual(image.mode, "RGBA")
 
     def test_intermediates_live_under_build_dir(self) -> None:
-        self.rich_result()
-        build_dir = os.path.join(self.out_dir, "_build")
+        result, out_dir, cuts = self._fresh_build("out_layout")
+        build_dir = os.path.join(out_dir, "_build")
         self.assertTrue(os.path.isdir(build_dir))
         names = os.listdir(build_dir)
         self.assertIn("base.mp4", names)
         self.assertIn("ambient.wav", names)
         self.assertIn("render.log", names)
-        self.assertEqual(sorted(n for n in names if n.startswith("seg_") and n.endswith(".mp4")),
-                         [f"seg_{i:03d}.mp4" for i in range(SHOTS)])
+        # 切片文件名带内容摘要（跨次复用的钥匙），所以只断言「每镜一个、互不重复」。
+        self.assertEqual(len(cuts), SHOTS, f"应当每镜一个切片: {cuts}")
+        self.assertEqual(len(set(cuts)), SHOTS, f"切片名重复意味着缓存撞车: {cuts}")
+        self.assertTrue(result.ok)
 
     def test_progress_callback_receives_every_shot(self) -> None:
         self.rich_result()
-        self.assertEqual([item[0] for item in self.progress], [1, 2, 3])
+        # 并行切片下「完成顺序」本来就不是时间线顺序，断言的是「每镜都报过一次」。
+        self.assertEqual(sorted(item[0] for item in self.progress), [1, 2, 3])
         self.assertTrue(all(item[1] == SHOTS for item in self.progress))
         self.assertTrue(all(item[2] for item in self.progress))
 
-    # -- 复用切片 ---------------------------------------------------------- #
-    def test_skip_segments_reuses_existing_cuts(self) -> None:
-        self.rich_result()
-        build_dir = os.path.join(self.out_dir, "_build")
-        cuts = [os.path.join(build_dir, f"seg_{i:03d}.mp4") for i in range(SHOTS)]
+    # -- 复用切片与并行 ---------------------------------------------------- #
+    def _fresh_build(self, name: str, **options):
+        """建到自己的目录里：缓存会跨次累积，共用目录会让计数断言互相污染。"""
+        out_dir = os.path.join(self.scratch, name)
+        opts = {"keep_temp": True}
+        opts.update(options)
+        result = FFmpegBackend(paths=self.paths, options=opts).build(
+            self._rich_timeline(), out_dir)
+        build_dir = os.path.join(out_dir, "_build")
+        cuts = [os.path.join(build_dir, n) for n in sorted(os.listdir(build_dir))
+                if n.startswith("seg_") and n.endswith(".mp4")]
+        return result, out_dir, cuts
+
+    def test_cached_segments_are_reused_on_second_build(self) -> None:
+        result, out_dir, cuts = self._fresh_build("out_cache")
+        self.assertTrue(result.ok, msg=result.error)
+        self.assertEqual(len(cuts), SHOTS)
         before = [os.path.getmtime(path) for path in cuts]
         time.sleep(1.1)  # 让文件系统时间戳能拉开，否则「没变」证明不了任何事
-        timeline = self._rich_timeline()
-        FFmpegBackend(paths=self.paths,
-                      options={"keep_temp": True, "skip_segments": True}).build(
-                          timeline, self.out_dir)
+        second = FFmpegBackend(paths=self.paths,
+                               options={"keep_temp": True}).build(
+                                   self._rich_timeline(), out_dir)
         after = [os.path.getmtime(path) for path in cuts]
-        self.assertEqual(before, after, "skip_segments 应当复用已有切片而不是重切")
+        self.assertEqual(before, after, "默认缓存应当复用已有切片而不是重切")
+        self.assertEqual(second.data.get("segments_reused"), SHOTS)
+
+    def test_cache_false_forces_reencode(self) -> None:
+        result, out_dir, cuts = self._fresh_build("out_nocache")
+        self.assertTrue(result.ok, msg=result.error)
+        before = [os.path.getmtime(path) for path in cuts]
+        time.sleep(1.1)
+        second = FFmpegBackend(paths=self.paths,
+                               options={"keep_temp": True, "cache": False}).build(
+                                   self._rich_timeline(), out_dir)
+        after = [os.path.getmtime(path) for path in cuts]
+        self.assertNotEqual(before, after, "cache=False 时必须真的重切")
+        self.assertEqual(second.data.get("segments_reused"), 0)
+
+    def test_jobs_option_is_honoured(self) -> None:
+        backend = FFmpegBackend(paths=self.paths, options={"jobs": 1})
+        self.assertEqual(backend._jobs(5), 1)
+        self.assertEqual(FFmpegBackend(paths=self.paths,
+                                       options={"jobs": "99"})._jobs(3), 3)
+        # 默认值必须是「有限并行」：纯串行白等 CPU，开满会把内存打爆
+        default = FFmpegBackend(paths=self.paths)._jobs(8)
+        self.assertGreaterEqual(default, 1)
+        self.assertLessEqual(default, 4)
+
+    def test_segment_digest_ignores_text_and_order_but_not_picture(self) -> None:
+        from cutwright.backends.ffmpeg import _segment_digest
+        timeline = self._rich_timeline()
+        first = timeline.clips[0]
+        base = _segment_digest(first, CANVAS[0], CANVAS[1], FPS, {})
+        self.assertEqual(base, _segment_digest(first, CANVAS[0], CANVAS[1], FPS, {}))
+        self.assertNotEqual(base, _segment_digest(first, CANVAS[0], CANVAS[1], FPS,
+                                                 {"preview": True}))
+        self.assertNotEqual(base, _segment_digest(first, CANVAS[0] // 2, CANVAS[1],
+                                                 FPS, {}))
+        # 同一个镜头搬个位置（改顺序）不该改变摘要——否则「调顺序」会重切全部画面
+        moved = timeline.clips[1]
+        self.assertEqual(_segment_digest(moved, CANVAS[0], CANVAS[1], FPS, {}),
+                         _segment_digest(timeline.clips[1], CANVAS[0], CANVAS[1],
+                                         FPS, {}))
 
     def _rich_timeline(self) -> Timeline:
         """与 rich_result 相同的时间线，供复用测试重建一次。"""

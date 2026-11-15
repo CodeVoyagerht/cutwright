@@ -27,7 +27,9 @@ from __future__ import annotations
 import hashlib
 import os
 import shlex
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Optional, Sequence, Tuple
 
 from .. import media, text
@@ -47,6 +49,11 @@ HDR_TONEMAP = (
 
 # 切片质量。15 比成片的 18 高，是为了让「二次编码」几乎不损失细节。
 SEGMENT_CRF = 15
+
+# 预览档：只求「能看、能对时间」，几分钟的片子几十秒出。
+# crf 28 + veryfast 的观感是「够看清字幕和构图」，不会用于交付。
+PREVIEW_SEGMENT_CRF = 30
+PREVIEW_PRESET = "veryfast"
 
 # 环境声的淡入淡出上限：0.03s 只够去掉拼接处的爆音，再长就会吃掉字头。
 AMBIENT_FADE = 0.03
@@ -181,6 +188,8 @@ class FFmpegBackend(Backend):
                 "overlays": len(overlays),
                 "ambient": bool(ambient),
                 "audio": bool(ambient or self._music_items(timeline)),
+                "preview": bool(self.options.get("preview", False)),
+                "segments_reused": getattr(self, "_segments_reused", 0),
             },
             warnings=warnings,
         )
@@ -188,34 +197,93 @@ class FFmpegBackend(Backend):
     # -- 切片 -------------------------------------------------------------- #
     def _render_segments(self, timeline: Timeline, build_dir: str,
                          width: int, height: int, fps: float) -> List[str]:
-        """逐镜切片，返回片子路径（顺序即时间线顺序）。"""
+        """逐镜切片（可并行、可跨次复用），返回片子路径（顺序即时间线顺序）。
+
+        两个提速开关，默认都开：
+
+        - ``cache``（默认 ``True``）：切片文件名带**内容摘要**，改字幕/改 BGM/调镜头顺序
+          都不会让已切好的画面重切。只要源文件与入点不变，摘要就不变。
+        - ``jobs``（默认 ``min(4, CPU)``）：ffmpeg 是独立进程，多开几个能吃到多核；
+          纯 Python 侧没有 GIL 问题，只有写日志需要加锁。
+        """
         total = len(timeline.clips)
-        out_paths: List[str] = []
+        use_cache = bool(self.options.get("cache", True))
+        plans: List[Tuple[int, TimelineClip, str]] = []
         for position, clip in enumerate(timeline.clips, start=1):
-            out_path = os.path.join(build_dir, f"seg_{clip.index:03d}.mp4")
-            if self.options.get("skip_segments") and os.path.exists(out_path) \
-                    and os.path.getsize(out_path) > 0:
-                self._note(f"[{position}/{total}] 复用切片 {os.path.basename(out_path)}")
-            else:
-                self._note(f"[{position}/{total}] 切片 {clip.name}")
-                self._encode_segment(clip, out_path, position, total, width, height, fps)
-            out_paths.append(out_path)
+            digest = _segment_digest(clip, width, height, fps, self.options)
+            plans.append((position, clip, os.path.join(build_dir, f"seg_{digest}.mp4")))
+
+        reused = [p for p in plans if use_cache and _has_bytes(p[2])]
+        pending = [p for p in plans if p not in reused]
+        for position, clip, out_path in reused:
+            self._note(f"[{position}/{total}] 复用切片 {os.path.basename(out_path)}"
+                       f"（{clip.name}）")
             self._progress(position, total, clip.name)
+        if reused:
+            self._note(f"复用 {len(reused)} 段，省掉 {len(reused)} 次编码")
+
+        jobs = self._jobs(len(pending))
+        if pending and jobs > 1:
+            self._note(f"并行切片 {len(pending)} 段（{jobs} 路）")
+            with ThreadPoolExecutor(max_workers=jobs) as pool:
+                futures = {
+                    pool.submit(self._encode_one, position, clip, out_path,
+                                total, width, height, fps): (position, clip)
+                    for position, clip, out_path in pending
+                }
+                for future in as_completed(futures):
+                    position, clip = futures[future]
+                    future.result()          # 失败在这里抛出，带镜头序号
+                    self._progress(position, total, clip.name)
+        else:
+            for position, clip, out_path in pending:
+                self._note(f"[{position}/{total}] 切片 {clip.name}")
+                self._encode_one(position, clip, out_path, total, width, height, fps)
+                self._progress(position, total, clip.name)
+
+        out_paths = [p[2] for p in plans]
+        self._segments_reused = len(reused)
         self._note(f"切片完成: {len(out_paths)} 段")
         return out_paths
+
+    def _encode_one(self, position: int, clip: TimelineClip, out_path: str,
+                    total: int, width: int, height: int, fps: float) -> None:
+        """切一段，失败时把错误升级成带镜头序号的那个版本。"""
+        try:
+            self._encode_segment(clip, out_path, position, total, width, height, fps)
+        except SegmentError:
+            raise
+        except FFmpegError as exc:
+            raise SegmentError(exc.cmd, exc.code, exc.stderr,
+                               shot_index=position, shot_name=clip.name,
+                               total_shots=total, log_path=self._log_path) from exc
+
+    def _jobs(self, pending: int) -> int:
+        """并行路数：选项优先，否则按 CPU 与待切数量取小的那个。"""
+        raw = self.options.get("jobs")
+        if raw is None or raw == "":
+            cpu = os.cpu_count() or 1
+            return max(1, min(4, cpu, max(1, pending)))
+        try:
+            return max(1, min(32, int(raw), max(1, pending)))
+        except (TypeError, ValueError):
+            return 1
 
     def _encode_segment(self, clip: TimelineClip, out_path: str, position: int,
                         total: int, width: int, height: int, fps: float) -> None:
         """把一个镜头切成标准化的 h264 片段（固定尺寸/帧率/像素格式）。"""
         info = media.probe(clip.source, self.paths)
         chain = self._segment_filter(clip, info, width, height, fps)
+        preview = bool(self.options.get("preview", False))
+        crf = str(PREVIEW_SEGMENT_CRF if preview else SEGMENT_CRF)
+        preset = PREVIEW_PRESET if preview else "medium"
         cmd = [
             self.paths.ffmpeg, "-y", "-hide_banner", "-loglevel", "error",
             "-ss", _f(clip.src_in), "-t", _f(clip.src_dur),
             "-i", clip.source,
             "-filter:v", chain,
             "-an",
-            "-c:v", "libx264", "-preset", "medium", "-crf", str(SEGMENT_CRF),
+            "-c:v", "libx264", "-preset", preset, "-crf", crf,
             "-pix_fmt", "yuv420p",
             "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709",
             "-r", _f(fps), "-g", str(max(1, int(round(fps * 2)))),
@@ -523,8 +591,9 @@ class FFmpegBackend(Backend):
         else:
             cmd.append("-an")
 
-        crf = int(self.options.get("crf", 18))
-        preset = str(self.options.get("preset") or "slow")
+        crf = int(self.options.get("crf", 26 if self.options.get("preview") else 18))
+        preset = str(self.options.get("preset")
+                     or ("veryfast" if self.options.get("preview") else "slow"))
         cmd.extend([
             "-c:v", "libx264", "-preset", preset, "-crf", str(crf),
             "-pix_fmt", "yuv420p", "-movflags", "+faststart",
@@ -649,8 +718,14 @@ class FFmpegBackend(Backend):
     def _note(self, message: str) -> None:
         handle = getattr(self, "_log_handle", None)
         if handle is not None:
-            handle.write(message + "\n")
-            handle.flush()
+            # 切片是并行的，日志句柄必须串行写：两个线程同时 write+flush
+            # 会把行交错成半句，出问题时的日志就成了新的问题。
+            lock = getattr(self, "_log_lock", None)
+            if lock is None:
+                lock = self._log_lock = threading.Lock()
+            with lock:
+                handle.write(message + "\n")
+                handle.flush()
 
     def _cleanup(self, build_dir: str) -> None:
         import shutil
@@ -692,6 +767,40 @@ def _atempo_chain(speed: float) -> str:
         ratio /= 0.5
     parts.append(f"atempo={_f(ratio)}")
     return ",".join(parts)
+
+
+def _has_bytes(path: str) -> bool:
+    """文件存在且非空——编码到一半被杀掉会留下 0 字节的片子，别信它。"""
+    try:
+        return os.path.getsize(path) > 0
+    except OSError:
+        return False
+
+
+def _segment_digest(clip: TimelineClip, width: int, height: int, fps: float,
+                    options: dict) -> str:
+    """切片的内容摘要，用来做跨次复用的文件名。
+
+    参与摘要的一切都必须**影响像素或时长**：源文件（含 mtime/size，同名换了内容
+    也要重切）、入点、时长、变速、构图、画布、帧率、预览档。字幕、BGM、镜头的
+    先后顺序**不进摘要**——它们不改画面，改了也不该让 40 个镜头重切。
+    """
+    stat_key = ""
+    try:
+        st = os.stat(clip.source)
+        stat_key = f"{int(st.st_mtime)}:{st.st_size}"
+    except OSError:
+        stat_key = "missing"
+    payload = "\n".join([
+        f"v1", os.path.abspath(clip.source), stat_key,
+        _f(clip.src_in), _f(clip.src_dur), _f(getattr(clip, "speed", 1.0)),
+        str(getattr(clip, "zoom", "none")),
+        _f(float(getattr(clip, "zoom_amount", 0.0))),
+        _f(float(getattr(clip, "cx", 0.5))),
+        str(width), str(height), _f(fps),
+        "1" if bool(options.get("preview", False)) else "0",
+    ])
+    return hashlib.sha1(payload.encode("utf-8")).hexdigest()[:10]
 
 
 def _join_cmd(cmd: Sequence[str]) -> str:

@@ -23,6 +23,10 @@ cp -r preset ~/.dsh/.agent-presets/cutwright
 
 ⚠️ 目录名必须是 `cutwright`（= 预设 id），改名会导致选择器里认不出。
 
+⚠️ 更新时也要重新复制一遍（预设只在 DSH 启动时读一次），
+Windows 记得带 `/Y` 覆盖：`xcopy /E /I /Y preset "%USERPROFILE%\.dsh\.agent-presets\cutwright"`。
+完整流程见 [docs/install-and-update.md](../docs/install-and-update.md)。
+
 ## 先装技能，再开预设
 
 persona 里让 agent「用 `skill` 工具加载 cutwright」——那是指仓库里

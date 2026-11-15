@@ -1,4 +1,4 @@
-﻿# 剪匠 · cutwright
+# 剪匠 · cutwright
 
 > 一份分镜表 JSON，三条产线：**直出成片**、**剪映草稿**、**达芬奇时间线**。
 
@@ -97,6 +97,8 @@ pip install -e ".[render]"  # 需要烧字幕/花字时（Pillow）
 
 ffmpeg 单独装：`winget install Gyan.FFmpeg` / `brew install ffmpeg` / 直接丢两个 exe
 到 PATH。找不到时 `cutwright doctor` 会告诉你缺哪个，也可以用 `CUTWRIGHT_FFMPEG` 指定。
+
+想让朋友也装上、或者拉完更新怎么同步，见 [docs/install-and-update.md](docs/install-and-update.md)。
 
 ## 作为 Agent Skill 使用
 

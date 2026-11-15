@@ -115,6 +115,18 @@ def _make_scratch(prefix: str) -> str:
     raise unittest.SkipTest("找不到可写的临时目录（系统临时目录与仓库都不可写）")
 
 
+def _frame_count(path: str, paths) -> int:
+    """逐帧数一遍：``nb_read_frames`` 才是「这条片子有多少帧」。"""
+    import subprocess
+    proc = subprocess.run(
+        [paths.ffprobe, "-v", "error", "-select_streams", "v:0",
+         "-count_frames", "-show_entries", "stream=nb_read_frames",
+         "-of", "csv=p=0", path],
+        capture_output=True, stdin=subprocess.DEVNULL)
+    text = (proc.stdout or b"").decode("utf-8", "replace").strip().splitlines()
+    return int(text[-1]) if text else 0
+
+
 def _integrated_lufs(path: str, paths) -> float:
     """用 ebur128 量整片积分响度（LUFS）。"""
     import re
@@ -633,6 +645,20 @@ class FFmpegBuildTest(unittest.TestCase):
             timeline, os.path.join(self.scratch, "out_noloop"))
         self.assertTrue(result.ok, msg=result.error)
         self.assertFalse(any("循环" in w for w in result.warnings), result.warnings)
+
+    # -- 快编档与正式档必须同长 -------------------------------------------- #
+    def test_preview_keeps_the_same_frame_count(self):
+        final, _, _ = self._fresh_build("par_final")
+        preview, _, _ = self._fresh_build("par_preview", preview=True)
+        self.assertTrue(final.ok, msg=final.error)
+        self.assertTrue(preview.ok, msg=preview.error)
+        final_frames = _frame_count(final.artifacts[0], self.paths)
+        preview_frames = _frame_count(preview.artifacts[0], self.paths)
+        self.assertGreater(final_frames, 0)
+        self.assertEqual(
+            preview_frames, final_frames,
+            "快编档只该改画质，不该改时长：preview %d 帧 vs final %d 帧"
+            % (preview_frames, final_frames))
 
     # -- 配乐给人声让路（ducking） ----------------------------------------- #
     def _duck_film(self, name: str, **options):

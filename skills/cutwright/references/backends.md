@@ -31,7 +31,7 @@ cutwright build shotlist.json -b resolve  --opt grade=lut.cube
 | `overlay` | `true` | 是否烧 `image_overlays` |
 | `jobs` | `min(4, CPU, 待切镜头数)` | 并行切片数，`1` 是串行；钳在 1–32 |
 | `cache` | `true` | 切片按内容摘要复用（`_build/seg_<digest>.mp4`） |
-| `preview` | `false` | 快编档：切片 `-crf 30 -preset veryfast`，成片 `26/veryfast` |
+| `preview` | `false` | 快编档：切片 `-crf 30 -preset veryfast`，成片 `26/veryfast`。**只改画质不改时长**——帧数与正式档逐帧一致，预览看到的节奏就是成片的节奏 |
 | `keep_temp` | `true` | 保留 `_build/` 中间件（复用靠它） |
 | `duck` | `true` | 配乐给人声让路（侧链压缩，以环境声为侧链）。关掉就是固定音量相加 |
 | `duck_threshold` | `0.05` | 侧链触发阈值（0.001–1.0，线性）。人声很轻时压不下去就调小 |

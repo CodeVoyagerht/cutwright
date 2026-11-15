@@ -39,6 +39,10 @@
 
 ### 修复
 
+- **快编档与正式档的帧数一致性有回归用例**：`preview=true` 只该改画质，不该改时长——
+  若哪天差一帧，`overlay` 的 `enable` 窗口就会错位。`test_preview_keeps_the_same_frame_count`
+  逐帧数两条成片（实测同为 414 帧 / 13.800s）并断言相等。
+
 - **配乐给人声让路（ducking）**：混音时以环境声为侧链跑 `sidechaincompress`，
   人声一进来配乐自己退下去、说完再回来。以前配乐是固定音量相加，音乐一响就压住台词。
   三个旋钮：`--opt duck=false` 关掉、`duck_threshold`（默认 0.05）、`duck_ratio`（默认 8）。

@@ -132,6 +132,16 @@ cutwright build real-11-13.json -o out
    报出一串指向 `workspace\##_draftpath…` 的 `E051`。现在占位前缀会被还原成草稿目录下的
    真路径，同一条命令变成 `0 个错误，0 个警告`。
 
+**字幕样式尽量像原来那样摆**：同一份 `11月13日` 草稿，第 2–9 条是黄字（`#ffde00`）、
+`clip.transform.y = -0.73`（画面上方）、带描边、`subtitle_keywords` 有关键词。
+读回来不再是「一律白字底部」：颜色 / 上下位置 / 描边有无 / 关键词高亮都认出来了，
+归成一个 `import_N` 样式组。
+
+![读回来的黄字在上](images/import-style.jpg)
+
+字号与描边粗细仍是画布默认：剪映的 `font_size`（实测 `5.0`，1280×720）没有公开单位，
+换算成 px 只能靠试，猜错比不猜更糟——这条也写进 `warnings`。
+
 ## 7. 达芬奇（`-b resolve`）
 
 本机 `import DaVinciResolveScript` 失败（`fusionscript` DLL 找不到，外部脚本没开），
@@ -142,7 +152,7 @@ cutwright build real-11-13.json -o out
 
 ```
 python -m unittest discover -s tests -t .
-Ran 268 tests in 29.230s
+Ran 274 tests in 46.135s
 OK (skipped=2)
 ```
 

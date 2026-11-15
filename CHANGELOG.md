@@ -39,6 +39,13 @@
 
 ### 修复
 
+- **`import` 认得出字幕的颜色与位置**：以前读回来一律白字贴底，现在从草稿里取
+  `text_color` / `clip.transform.y` / `border_width` / `subtitle_keywords`，把颜色、
+  上下位置、描边有无、关键词高亮还原成分组样式（`import_N`），关键词自动包成
+  `｜…｜` 走换色。字号与描边粗细仍是画布默认——剪映 `font_size` 没有公开单位，
+  猜 px 比不猜更糟，这条写进 `warnings`。新增 `tests/test_jianying_reader.py`
+  的 `StyleRestoreTest`（4 例）。
+
 - **长台词拆成多镜时字幕锚错镜头**：字幕原先挂在最后一镜上，压到下一句头上
   （长剧本压测里实测重叠 2.10s、一次三条）。现在锚在这一句的第一镜，时长覆盖它占的全部镜头。
   新增 `tests/test_story.py::test_long_line_caption_covers_all_its_shots`。

@@ -143,10 +143,18 @@ $ cutwright import "C:\Users\me\...\com.lveditor.draft\我的草稿" -o shotlist
   下一步: cutwright validate shotlist.json --check-files
 ```
 
-读的是**排布**，不是像素：镜头的出入点、变速、字幕文案与时间、音频位置都拿回来了，
-**字幕样式、转场、关键帧、特效不还原**（猜错的样式比没有更糟），草稿里的旁白和字幕
+读的是**排布**，不是像素：镜头的出入点、变速、字幕文案与时间、音频位置都拿回来了。
+字幕还会尽量像原来那样摆：**颜色、上下位置、有没有描边、关键词高亮**都从草稿里认出来
+（`text_color` / `clip.transform.y` / `border_width` / `subtitle_keywords`），
+同一组归成一个命名样式；**字号和描边粗细用画布默认**——剪映的 `font_size` 没有公开单位，
+换算成 px 只能靠试，猜错比不猜更糟。转场、关键帧、特效不还原；草稿里的旁白和字幕
 也分不开，一律按字幕处理。加密草稿要本机有能用的 `videoeditor.dll`，没有就报错，不会
 悄悄给你一份空表；素材换了机器路径失效时，它会先列表告你多少条已经不在。
+
+![读回来的黄字在上、黑描边](docs/images/import-style.jpg)
+
+（上面这一帧是从真草稿 `11月13日` 读回、重新渲染出来的：黄字保持在画面顶部，
+关键词位置也对得上。原来这条线读回来是一律白色底部字幕。）
 
 图片段不会被当成「没画面」丢掉：它们是静帧，读回来是 `"still": true` 的镜头，重建时
 按同样时长铺一张图。剪映把朗读音频存在草稿目录里、路径写成
@@ -252,10 +260,10 @@ python skills/cutwright/scripts/install.py --target all
 python -m unittest discover -s tests -t .
 ```
 
-268 个用例，零依赖，`git clone` 完就能跑。真渲染的用例会检测 ffmpeg，没有就 skip
+274 个用例，零依赖，`git clone` 完就能跑。真渲染的用例会检测 ffmpeg，没有就 skip
 而不是 fail——CI 上的 `windows-latest` 有 ffmpeg，本地没装的开发者也不该被卡住。
 
-这台机器上的实测记录（doctor / validate / plan / build / qc / 剪映草稿 / 268 个用例）
+这台机器上的实测记录（doctor / validate / plan / build / qc / 剪映草稿 / 274 个用例）
 都在 [docs/acceptance.md](docs/acceptance.md)，包括**哪些是未验收项**。
 
 契约测试（`tests/test_cli_contract.py`）锁死的是**机器可读的部分**：`--json` 的字段、

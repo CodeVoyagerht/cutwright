@@ -194,3 +194,71 @@ class BadInputTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class StyleRestoreTest(unittest.TestCase):
+    """读回来要保住能拿准的东西：颜色、位置、描边有无、关键词。"""
+
+    def content(self, texts):
+        return {
+            "canvas_config": {"width": 1080, "height": 1920},
+            "function_assistant_info": {"fps": {"value": 30}},
+            "materials": {"texts": texts, "videos": [], "audios": []},
+            "tracks": [{"type": "video", "segments": []},
+                       {"type": "text", "segments": [
+                           {"material_id": t["id"],
+                            "target_timerange": {"start": int(i * 1e6),
+                                                 "duration": int(1e6)}}
+                           for i, t in enumerate(texts)]}],
+        }
+
+    def test_color_and_position_are_restored(self):
+        texts = [
+            {"id": "white-bottom", "content": json.dumps({"text": "白字在下"},
+                                                         ensure_ascii=False),
+             "text_color": "#FFFFFF",
+             "clip": {"transform": {"x": 0.0, "y": 0.32}}},
+            {"id": "yellow-top", "content": json.dumps({"text": "黄字在上"},
+                                                       ensure_ascii=False),
+             "text_color": "#ffde00",
+             "clip": {"transform": {"x": 0.0, "y": -0.70}}},
+        ]
+        # 段的 clip 才是位置的来源，材质上没有 clip
+        content = self.content(texts)
+        for seg in content["tracks"][1]["segments"]:
+            for material in texts:
+                if material["id"] == seg["material_id"]:
+                    seg["clip"] = material.pop("clip")
+        draft = read_content(content)
+        shotlist = draft.to_shotlist()
+        colors = sorted(style.color for style in shotlist.styles.values())
+        self.assertIn("#FFFFFF", colors)
+        self.assertIn("#FFDE00", colors)
+        styles = list(shotlist.styles.values())
+        top = [s for s in styles if s.color == "#FFDE00"][0]
+        self.assertIsNotNone(top.center_ratio_y)
+        self.assertLess(top.center_ratio_y, 0.5, "黄字在画面上方")
+        bottom = [s for s in styles if s.color == "#FFFFFF"][0]
+        self.assertIsNotNone(bottom.bottom_margin_px)
+
+    def test_keywords_become_color_separators(self):
+        texts = [{"id": "kw", "content": json.dumps(
+            {"text": "他说手环在箱子里"}, ensure_ascii=False),
+            "text_color": "#FFFFFF", "subtitle_keywords": ["手环"]}]
+        draft = read_content(self.content(texts))
+        text = draft.to_shotlist().text_segments[0].text
+        self.assertEqual(text, "他说｜手环｜在箱子里")
+        self.assertEqual(draft.to_shotlist().text_segments[0].keyword, "手环")
+
+    def test_plain_text_falls_back_to_caption(self):
+        texts = [{"id": "plain", "content": json.dumps({"text": "没有提示"},
+                                                       ensure_ascii=False)}]
+        shotlist = read_content(self.content(texts)).to_shotlist()
+        self.assertEqual(shotlist.text_segments[0].style, "caption")
+
+    def test_overlapping_keywords_do_not_double_wrap(self):
+        texts = [{"id": "kw2", "content": json.dumps({"text": "手环在箱子"},
+                                                     ensure_ascii=False),
+                  "text_color": "#FFFFFF", "subtitle_keywords": ["手环", "手环在箱"]}]
+        text = read_content(self.content(texts)).to_shotlist().text_segments[0].text
+        self.assertEqual(text.count("｜"), 2, "重叠关键词只包一次")

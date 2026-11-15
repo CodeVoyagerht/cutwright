@@ -24,9 +24,10 @@ import binascii
 import json
 import os
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+from ... import planner
 from ...schema import (AudioSegment, Canvas, Shotlist, TextSegment, TextStyle,
                        VideoSegment)
 from . import crypto as jycrypto
@@ -77,27 +78,24 @@ class DraftRead:
                 if not os.path.exists(item["file"])]
 
     def to_shotlist(self, *, name: Optional[str] = None) -> Shotlist:
-        """变成分镜表。样式一律用内置默认，字幕内容原样保留。"""
+        """变成分镜表。颜色/位置/描边按草稿还原，字号用画布默认。"""
         videos = [VideoSegment(file=item["file"], src_start=item["src_start"],
                                src_dur=item["src_dur"], tl_start=item["tl_start"],
                                speed=item["speed"], act=item.get("act", ""),
                                shot=index + 1, desc=item.get("desc", ""),
                                still=bool(item.get("still", False)))
                   for index, item in enumerate(self.videos)]
-        texts = [TextSegment(text=item["text"], tl_start=item["tl_start"],
-                             tl_dur=item["tl_dur"],
-                             style=item.get("style", "caption"))
-                 for item in self.texts]
+        canvas = Canvas(self.canvas.width, self.canvas.height)
+        styles, texts = _build_texts(self.texts, canvas)
         audios = [AudioSegment(file=item["file"], tl_start=item["tl_start"],
                                tl_dur=item["tl_dur"], src_start=item["src_start"],
                                kind=item.get("kind", "music"))
                   for item in self.audios]
         shotlist = Shotlist(name=name or self.name, material_dir="",
-                            asset_dir="", canvas=Canvas(self.canvas.width,
-                                                        self.canvas.height),
+                            asset_dir="", canvas=canvas,
                             fps=self.fps, video_segments=videos,
                             text_segments=texts, audio_segments=audios,
-                            base_dir=self.path)
+                            styles=styles, base_dir=self.path)
         return shotlist
 
 
@@ -215,8 +213,9 @@ def read_content(content: Dict[str, Any], *, path: str = "") -> DraftRead:
                               % (len(missing_ids), ", ".join(missing_ids[:4])))
     if not draft.videos:
         draft.warnings.append("这份草稿没有视频段——分镜表会是空的")
-    draft.warnings.append("字幕样式、转场、关键帧、特效都不还原：读回来的是「排布」，"
-                          "不是「剪映长什么样」。样式按内置默认给。")
+    draft.warnings.append("转场、关键帧、特效不还原；字幕只看颜色/描边/位置/关键词，"
+                          "字号与描边粗细用画布默认——剪映的 font_size 没有公开单位，"
+                          "换算成 px 只能靠试，猜错比不猜更糟。")
     if draft.texts:
         draft.warnings.append("旁白/画外音在草稿里也是文字轨，和字幕分不开——读回来一律"
                               "按字幕处理，重建前自己确认哪些不该出字。")
@@ -361,7 +360,78 @@ def _video_item(segment: Dict[str, Any], material: Dict[str, Any]) -> Dict[str, 
 def _text_item(segment: Dict[str, Any], material: Dict[str, Any]) -> Dict[str, Any]:
     tl_start, tl_dur = _range(segment, "target_timerange")
     return {"text": _text_content(material), "tl_start": tl_start,
-            "tl_dur": tl_dur, "style": "caption"}
+            "tl_dur": tl_dur, "style": "caption",
+            "stylehint": _style_hint(segment, material)}
+
+
+def _style_hint(segment: Dict[str, Any], material: Dict[str, Any]) -> Dict[str, Any]:
+    """从草稿里能可靠拿到的那点样式信息：颜色、位置、描边、关键词。
+
+    字号**不猜**：剪映的 ``font_size``（实测 5.0 在 1280×720 上）没有公开单位，
+    照它换算到我们的 px 只能靠试；猜错比不猜更糟，所以字号一律留默认，
+    由调用方在报告里说明。
+    """
+    hint: Dict[str, Any] = {}
+    color = _hex_color(material.get("text_color")) or _content_color(material)
+    if color:
+        hint["color"] = color
+    keywords = material.get("subtitle_keywords")
+    if isinstance(keywords, list):
+        words = [str(w).strip() for w in keywords if str(w).strip()]
+        if words:
+            hint["keywords"] = words
+    border = _as_num(material.get("border_width"))
+    if border and border > 0:
+        # 只记「有没有描边」：剪映的 border_width 实测是 0.08 这种归一化值，
+        # 换算成 px 要先知道字号，而字号我们没有标定过——猜一个数字不如用默认描边。
+        hint["stroke"] = True
+    clip = segment.get("clip") or {}
+    transform = clip.get("transform") if isinstance(clip, dict) else None
+    if isinstance(transform, dict):
+        y = _as_num(transform.get("y"))
+        if y is not None:
+            # 剪映的 y 以画面中心为 0、向下为正；字幕通常在 +0.3 附近。
+            hint["y"] = round(y, 3)
+            hint["zone"] = "bottom" if y > 0.15 else ("top" if y < -0.15 else "middle")
+    return hint
+
+
+def _hex_color(raw: Any) -> str:
+    """``#ffde00`` / ``[1.0, 0.87, 0.0]`` → ``#FFDE00``。"""
+    if isinstance(raw, str) and re.fullmatch(r"#[0-9a-fA-F]{6}", raw.strip()):
+        return raw.strip().upper()
+    if isinstance(raw, (list, tuple)) and len(raw) >= 3:
+        try:
+            parts = [max(0, min(255, int(round(float(v) * 255)))) for v in raw[:3]]
+        except (TypeError, ValueError):
+            return ""
+        return "#%02X%02X%02X" % tuple(parts)
+    return ""
+
+
+def _content_color(material: Dict[str, Any]) -> str:
+    """颜色也可能藏在 ``content`` 的 ``styles[0].fill`` 里。"""
+    raw = material.get("content")
+    if not isinstance(raw, str):
+        return ""
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return ""
+    styles = parsed.get("styles") if isinstance(parsed, dict) else None
+    if not isinstance(styles, list) or not styles:
+        return ""
+    fill = (styles[0] or {}).get("fill") or {}
+    solid = ((fill.get("content") or {}).get("solid") or {})
+    return _hex_color(solid.get("color"))
+
+
+def _as_num(value: Any) -> Optional[float]:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
 
 
 def _audio_item(segment: Dict[str, Any], material: Dict[str, Any]) -> Dict[str, Any]:
@@ -406,3 +476,80 @@ def _read_fps(content: Dict[str, Any]) -> float:
         if 1.0 <= fps <= 240.0:
             return round(fps, 3)
     return 30.0
+
+
+def _build_texts(items: Sequence[Dict[str, Any]],
+                 canvas: Canvas) -> Tuple[Dict[str, TextStyle], List[TextSegment]]:
+    """按草稿里读到的颜色/位置/描边分组，造出对应的样式名。
+
+    剪映允许每条字幕各调各的，我们只能一组一个样式；所以按
+    ``(zone, color, 有无描边)`` 归并——同组共用一条样式，不同组各自命名。
+    字号不还原（见 ``_style_hint`` 的说明），用画布默认值。
+    """
+    base = planner.default_styles(canvas)["caption"]
+    groups: Dict[Tuple[str, str, bool], str] = {}
+    styles: Dict[str, TextStyle] = {}
+    out: List[TextSegment] = []
+    for item in items:
+        hint = item.get("stylehint") or {}
+        zone = str(hint.get("zone") or "bottom")
+        color = str(hint.get("color") or base.color)
+        stroke = bool(hint.get("stroke"))
+        key = (zone, color, stroke)
+        name = groups.get(key)
+        if name is None:
+            plain = (key == ("bottom", base.color, False))
+            name = "caption" if (plain and not groups) else "import_%d" % (len(groups) + 1)
+            groups[key] = name
+            styles[name] = _style_from_hint(base, hint, zone, color, canvas)
+        out.append(TextSegment(text=_wrap_keywords(item["text"], hint.get("keywords")),
+                               tl_start=item["tl_start"], tl_dur=item["tl_dur"],
+                               style=name))
+    return styles, out
+
+
+def _style_from_hint(base: TextStyle, hint: Dict[str, Any], zone: str,
+                     color: str, canvas: Canvas) -> TextStyle:
+    style = replace(base, color=color)
+    if not hint.get("stroke"):
+        style.stroke_width_px = 0.0
+    y = hint.get("y")
+    if isinstance(y, (int, float)):
+        if zone == "bottom":
+            style.bottom_margin_px = float(max(40, int(canvas.height * (0.5 - float(y)))))
+            style.center_ratio_y = None
+        else:
+            # 留 10% 安全边：贴边写的字幕在竖屏上会被裁掉半个字。
+            style.center_ratio_y = float(min(0.90, max(0.10, 0.5 + float(y))))
+            style.bottom_margin_px = None
+    return style
+
+
+def _wrap_keywords(text: str, keywords: Optional[Sequence[str]]) -> str:
+    """把关键词包进我们的换色标记：``他说手环在箱子里`` → ``他说｜手环｜在箱子里``。
+
+    分隔符成对出现才生效（白/黄交替），所以每个关键词前后各插一个。
+    """
+    if not keywords:
+        return text
+    spans: List[Tuple[int, int]] = []
+    for word in keywords:
+        if not word:
+            continue
+        start = text.find(word)
+        if start < 0:
+            continue
+        end = start + len(word)
+        if any(start < e and s < end for s, e in spans):   # 重叠就只留第一个
+            continue
+        spans.append((start, end))
+    if not spans:
+        return text
+    pieces: List[str] = []
+    cursor = 0
+    for start, end in sorted(spans):
+        pieces.append(text[cursor:start])
+        pieces.append("\uff5c" + text[start:end] + "\uff5c")
+        cursor = end
+    pieces.append(text[cursor:])
+    return "".join(pieces)

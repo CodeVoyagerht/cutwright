@@ -1,6 +1,6 @@
 ---
 name: cutwright
-description: 把分镜表 JSON 剪成成片、剪映草稿或达芬奇时间线。Use when 用户要自动剪辑、批量出片、把一堆素材排成分镜表、生成剪映草稿或达芬奇时间线、或者要求"按文案配画面"；do not use for 需要逐帧手工创意特效、音效设计、或必须人工审美判断的精剪。
+description: 把分镜表 JSON 或短剧剧本剪成成片、剪映草稿或达芬奇时间线。Use when 用户要自动剪辑、批量出片、把一堆素材排成分镜表、按剧本/台词剪短剧、生成剪映草稿或达芬奇时间线、或者要求"按文案配画面"；do not use for 需要逐帧手工创意特效、音效设计、或必须人工审美判断的精剪。
 license: MIT
 compatibility: 需要 Python 3.9+。ffmpeg 后端需 ffmpeg/ffprobe 在 PATH；剪映后端需剪映专业版 11.x；达芬奇后端需 Resolve Studio 且开启外部脚本。核心零第三方依赖，烧字幕需 Pillow。
 metadata:
@@ -23,6 +23,8 @@ metadata:
 |---|---|---|
 | "把这些素材剪成一条竖屏视频" | ✅ | 工作流 A |
 | "按这份文案配画面" | ✅ | 先把文案拆成分镜表，再工作流 A |
+| "按这个剧本剪一集短剧" | ✅ | 工作流 D（剧本 → 分镜表 → 成片） |
+| "这堆素材你自己挑镜头排" | ✅ | 工作流 D 的第一步 `index`，再手排或 `story` |
 | "给我生成剪映草稿，我要自己再改" | ✅ | 工作流 B |
 | "进达芬奇调色" | ✅ | 工作流 C |
 | "帮我批量出 20 条同模板视频" | ✅ | 工作流 A + 循环换分镜表 |
@@ -82,6 +84,25 @@ cutwright build work/shotlist.json -b resolve --opt grade=path/to/lut.cube
 - 切点由 ffmpeg 算，**不要用 `DetectSceneCuts()`**：它会当场在时间线上打切点，
   是破坏性操作，不是只读分析。
 
+## 工作流 D：剧本 → 分镜表 → 成片
+
+有剧本（短剧、对话戏、解说台本）时走这条。人不写镜头，只写戏。
+
+```bash
+cutwright index materials -o materials.json        # ① 素材入库：按文件名打标签
+cutwright story screenplay.json --index materials.json -o shotlist.json   # ② 排片
+cutwright validate shotlist.json --check-files     # ③ 有 error 别往下走
+cutwright build shotlist.json -o out               # ④ 出片（或 -b jianying 进剪映）
+```
+
+- **顺序不能反**：`story` 只认索引里的时长，不扫文件系统。换了素材必须重跑 `index`。
+- **`story` 的报告必须看 `unresolved`**：非空意味着某句台词没有画面，成片里是一段空白。
+- 场次的 `tags`（地点+时间+气氛）决定挑素材的质量，写漏了机器就满库乱挑。
+- 素材命名约定 `场次_场景_时间_景别_谁`（`S01_subway_night_wide.mp4`），`index` 会自动
+  抽成标签；`who` 能对上 `cast` 时，台词优先选这个人的镜头。
+- 完整字段与打分规则见 [references/screenplay-schema.md](references/screenplay-schema.md)，
+  命名、验收、坑见 [references/story-workflow.md](references/story-workflow.md)。
+
 ## 剪辑判断规则
 
 这些是"分镜表里该填什么数"的经验，不是代码能替你决定的。
@@ -114,6 +135,15 @@ cutwright build work/shotlist.json -b resolve --opt grade=path/to/lut.cube
 - `zoom: "in"` + `zoom_amount: 0.05–0.08` 是安全区；超过 0.12 会明显糊。
 - HDR 素材（iPhone 的 HLG/Dolby）不用特殊处理，管线会自动 tonemap 到 709。
 
+**短剧（走工作流 D 时）**
+- 一句台词 1 镜最舒服；一句 6 秒以上才需要拆（`--max-shot 2.5` 左右），拆出来的
+  长短交错是节奏，均分是机械感。
+- 对话戏的平均镜长比口播短：**1.6–2.4s**。过 3s 就像舞台剧录像。
+- 一场戏至少 2 句台词、2 个镜头，否则观众会觉得画面卡住了。
+- 旁白（`voiceover`）默认不出字是对的——内心独白变成字幕会显得廉价，
+  除非这是解说类内容（那时加 `--vo-captions`）。
+- `who` 一定要写全，它是「这段画面里有没有这个人在场」的唯一线索。
+
 ## 命令速查
 
 | 命令 | 用途 |
@@ -124,6 +154,8 @@ cutwright build work/shotlist.json -b resolve --opt grade=path/to/lut.cube
 | `build <s> -b <backend> -o <dir>` | 出产物，`--opt k=v` 传后端选项 |
 | `qc <s> [--mp4 f]` | 体检时间线，给 mp4 则连成片一起 |
 | `init <dir>` | 生成示例 |
+| `index <素材目录> -o idx.json` | 扫素材：按文件名打标签、量可用时长 |
+| `story <剧本> --index idx.json -o s.json` | 剧本 → 分镜表，打印分场报告 |
 
 全命令支持 `--json`：stdout 只有 JSON，日志走 stderr。给机器读就用它。
 
@@ -138,6 +170,7 @@ cutwright build work/shotlist.json -b resolve --opt grade=path/to/lut.cube
 - [ ] 成片时长与 `plan` 报的偏差 < 0.25s
 - [ ] 随机抽 3 个镜头，确认没有黑场、没有裁错边
 - [ ] 字幕没有越界、没有两条同屏、关键词换色生效
+- [ ] 走剧本产线时：`story` 报告的 `unresolved` 为空，每场镜头数 ≥ 台词数一半
 - [ ] 交付时给出**产物路径 + 时长 + 分辨率 + 体检结论**，缺一不可
 
 ## Gotchas
@@ -157,12 +190,18 @@ cutwright build work/shotlist.json -b resolve --opt grade=path/to/lut.cube
    加镜头数，别调 tolerance 骗自己。
 7. **成片比预期长** → 大概率最后一条 `image_overlay` 的 `tl_dur` 超了片尾，
    `qc` 的 `overlays_valid` 会告诉你。
+8. **`story` 排出来全是同一段素材** → 素材文件名没有可用的标签（`VID_2026.mp4`），
+   改文件名重跑 `index`，或者手写索引的 `tags`。
+9. **剧本改了 fps 之后时长全错** → `S003` 会说 fps 非法；这支工具不会悄悄把 fps
+   修成 30，因为那会把「写错了」伪装成「算错了」。
 
 ## 文件索引
 
 - [references/shotlist-schema.md](references/shotlist-schema.md) —— 分镜表全部字段、类型、默认值、校验码
+- [references/screenplay-schema.md](references/screenplay-schema.md) —— 剧本/素材索引字段、S0xx 校验码、排片三规则
+- [references/story-workflow.md](references/story-workflow.md) —— 短剧产线四步、素材命名、验收清单、坑
 - [references/backends.md](references/backends.md) —— 三个后端的选项、产物结构、依赖矩阵
 - [references/troubleshooting.md](references/troubleshooting.md) —— 报错原文 → 原因 → 处理
 - `scripts/verify.py` —— 一步跑完 validate + plan + qc，退出码即结论（CI 与 agent 都用它）
-- `scripts/install.py` —— 把本技能装到 Claude Code / Cursor / Codex / Gemini 的 skill 目录
+- `scripts/install.py` —— 把本技能装到 DSH / Claude Code / Cursor / Codex / Gemini 的 skill 目录
 - `assets/example-shotlist.json` —— 可直接 `build` 的最小分镜表

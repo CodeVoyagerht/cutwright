@@ -86,6 +86,52 @@ cutwright build shotlist.json -b resolve  --opt grade=lut.cube # 建线并逐镜
 
 完整字段见 [references/shotlist-schema.md](skills/cutwright/references/shotlist-schema.md)。
 
+## 有剧本的话，不用手写分镜表
+
+短剧、对话戏、解说台本这类内容，你不该去数「第 17 个镜头从哪帧开始」。写戏，剩下的交给机器：
+
+```bash
+cutwright index materials -o materials.json     # 扫素材：按文件名打标签、量时长
+cutwright story screenplay.json --index materials.json -o shotlist.json
+cutwright build shotlist.json -o out            # 后面和手排分镜表完全一样
+```
+
+```json
+{
+  "name": "地铁追凶 第1集",
+  "canvas": { "width": 1080, "height": 1920 },
+  "cast": { "lin": "林队", "zhou": "周小满" },
+  "music": { "file": "materials/bgm.mp3", "gain_db": -20 },
+  "scenes": [
+    {
+      "id": "S1", "tags": ["subway", "night"],
+      "lines": [
+        { "type": "action", "text": "末班车进站，人群散开" },
+        { "who": "zhou", "text": "你确定他会来？" },
+        { "who": "lin", "text": "他欠我一条命", "duration": 2.4 }
+      ]
+    }
+  ]
+}
+```
+
+`story` 干三件事：按台词估时长（有旁白音频就用音频真实时长）、把长台词切成带节奏的镜头、
+按「场次标签 + 人物 + 景别」从素材库里挑画面。挑不动会明说哪句没素材，不会拿占位符糊过去。
+
+```console
+$ cutwright story examples/story/screenplay.json --index examples/story/materials.json
+剧本 地铁追凶 第1集 → examples/story/shotlist.json
+  3 场 / 8 句 → 8 镜 / 0:12.90
+    S1        4.93s  3 镜  地铁站台 · 夜
+    S2        5.90s  3 镜  车厢 · 夜
+    S3        2.07s  2 镜  出口 · 夜
+  字幕 7 条  旁白 1 段  音频 1 条
+```
+
+规则与坑：剧本字段 [references/screenplay-schema.md](skills/cutwright/references/screenplay-schema.md)，
+产线流程 [references/story-workflow.md](skills/cutwright/references/story-workflow.md)。
+可直接跑的例子在 [`examples/story/`](examples/story)（`python examples/story/make_media.py` 会现造素材）。
+
 ## 安装
 
 ```bash
@@ -123,6 +169,8 @@ python skills/cutwright/scripts/install.py --target all
 | `plan` | 统计 + 时长拟合（`--target` / `--strategy trim\|speed`） | 无（`--out` 才写文件） |
 | `build` | 构建草稿 / 时间线 / 成片 | **写文件** |
 | `qc` | 时间线体检；给 `--mp4` 则连成片一起 | 无 |
+| `index` | 扫素材目录 → 索引（按文件名打标签、量可用时长） | 写文件 |
+| `story` | 剧本 + 索引 → 分镜表，打印分场报告 | 写文件 |
 | `init` | 生成可用示例 | 写文件 |
 
 所有命令都接受 `--json`：**stdout 只有一份合法 JSON，日志全走 stderr，退出码说真话**

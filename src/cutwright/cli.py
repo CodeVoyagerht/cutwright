@@ -19,6 +19,8 @@ import sys
 from typing import Any, Dict, List, Optional
 
 from . import __version__, config, demo, media, planner, qc
+from . import screenplay as screenplay_mod
+from . import story as story_mod
 from .backends import available_backends, get_backend
 from .schema import Shotlist, load_shotlist, validate
 from .timeline import Timeline, TimelineError
@@ -453,6 +455,123 @@ cutwright build    shotlist.json --backend ffmpeg -o out
 
 
 # --------------------------------------------------------------------------- #
+# 剧本 → 分镜表
+# --------------------------------------------------------------------------- #
+def cmd_index(args: argparse.Namespace) -> int:
+    if not os.path.isdir(args.materials):
+        raise SystemExit(f"素材目录不存在: {args.materials}")
+    index = story_mod.MaterialIndex.from_dir(
+        args.materials, scene_threshold=args.scene_threshold,
+        min_shot=args.min_shot, max_shot=args.max_shot, paths=config.discover())
+    if not index.pieces:
+        if args.json:
+            _print_json({"ok": False, "pieces": 0, "error": "切不出可用镜头"})
+        else:
+            _err(f"切不出可用镜头：检查 {args.materials} 里有没有视频，"
+                 f"或调小 --min-shot / 降低 --scene-threshold")
+        return 1
+    index.save(args.out)
+    tags: Dict[str, int] = {}
+    for piece in index.pieces:
+        for tag in piece.tags:
+            tags[tag] = tags.get(tag, 0) + 1
+    if args.json:
+        _print_json({"ok": True, "pieces": len(index.pieces), "out": args.out,
+                     "tags": tags})
+        return 0
+    print(f"素材索引 {args.out}：{len(index.pieces)} 个镜头")
+    if tags:
+        top = sorted(tags.items(), key=lambda kv: kv[1], reverse=True)[:12]
+        print("  标签: " + ", ".join(f"{k}×{v}" for k, v in top))
+    else:
+        print("  没有标签——文件名里没带语义（如 `S01_subway_night.mp4` 会带出 subway/night）")
+    return 0
+
+
+def cmd_story(args: argparse.Namespace) -> int:
+    if not os.path.isfile(args.screenplay):
+        raise SystemExit(f"剧本不存在: {args.screenplay}")
+    screenplay = screenplay_mod.load_screenplay(args.screenplay)
+    issues = screenplay_mod.validate_screenplay(screenplay, check_files=args.check_files)
+    errors = [i for i in issues if i.level == "error"]
+    warnings = [i for i in issues if i.level == "warn"]
+    if errors:
+        if args.json:
+            _print_json({"ok": False, "issues": [i.to_dict() for i in issues]})
+        else:
+            for issue in issues:
+                print(issue)
+            _err(f"\n剧本有 {len(errors)} 个错误，先修掉再排片。")
+        return 1
+
+    options = story_mod.StoryOptions(
+        target_duration=args.target,
+        vo_captions=args.vo_captions,
+        captions=not args.no_captions,
+        paths=config.discover(),
+    )
+    if args.cps:
+        options.cps_dialogue = args.cps
+        options.cps_voiceover = args.cps * 0.92
+    if args.min_shot:
+        options.min_shot = args.min_shot
+    if args.max_shot:
+        options.max_shot = args.max_shot
+    if args.pause is not None:
+        options.pause_default = args.pause
+
+    index = story_mod.read_index(screenplay, args.index or "", args.material or "", options)
+    if not index.pieces:
+        detail = ("素材索引是空的" if args.index else
+                  "既没给素材目录，剧本里也没写 material_dir")
+        if args.json:
+            _print_json({"ok": False, "error": detail})
+        else:
+            _err(f"排不了：{detail}。用 --material <目录> 或 --index materials.json 指定。")
+        return 1
+
+    shotlist, report = story_mod.build_shotlist(screenplay, index, options)
+    if args.target:
+        shotlist, fit = planner.fit_duration(shotlist, args.target,
+                                             paths=options.paths)
+        report.warnings.extend(fit.messages)
+        report.duration = round(shotlist.video_duration(), 3)
+        report.shots = len(shotlist.video_segments)
+
+    shotlist, _ = planner.normalize_shotlist(shotlist, trust_existing=True)
+    issues_sl = validate(shotlist)
+    sl_errors = [i for i in issues_sl if i.level == "error"]
+    _write_shotlist(shotlist, args.out)
+
+    if args.json:
+        _print_json({"ok": report.ok and not sl_errors, "report": report.to_dict(),
+                     "out": args.out,
+                     "issues": [i.to_dict() for i in issues_sl]})
+        return 0 if report.ok and not sl_errors else 1
+
+    print(f"剧本 {screenplay.name} → {args.out}")
+    print(f"  {report.scenes} 场 / {report.lines} 句 → {report.shots} 镜 / "
+          f"{_hms(report.duration)}")
+    for item in report.per_scene[:12]:
+        print(f"    {item['id']:<6} {item['dur']:>7.2f}s  {item['shots']} 镜  {item['slug']}")
+    if len(report.per_scene) > 12:
+        print(f"    ……另有 {len(report.per_scene) - 12} 场")
+    print(f"  字幕 {len(shotlist.text_segments)} 条  旁白 {len(shotlist.vo_segments)} 段  "
+          f"音频 {len(shotlist.audio_segments)} 条")
+    for warning in report.warnings[:8]:
+        _err(f"注意: {warning}")
+    if len(report.warnings) > 8:
+        _err(f"注意: ……另有 {len(report.warnings) - 8} 条")
+    for issue in sl_errors[:5]:
+        print(issue)
+    if sl_errors:
+        _err(f"排出来的分镜表有 {len(sl_errors)} 个错误（已写出，修完再 build）")
+        return 1
+    print(f"  下一步: cutwright build {args.out} -o out")
+    return 0
+
+
+# --------------------------------------------------------------------------- #
 # 解析器
 # --------------------------------------------------------------------------- #
 def build_parser() -> argparse.ArgumentParser:
@@ -513,6 +632,28 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--materials", help="素材目录（默认 <dir>/materials）")
     sp.add_argument("--with-media", action="store_true",
                     help="连素材一起合成（需要 ffmpeg；生成后可以直接 build）")
+
+    sp = add("index", "扫素材目录，建一份带标签的素材索引", cmd_index)
+    sp.add_argument("materials", help="素材目录")
+    sp.add_argument("--out", "-o", default="materials.json", help="索引写到哪（默认 materials.json）")
+    sp.add_argument("--scene-threshold", type=float, default=0.4,
+                    help="场景切点灵敏度，越小越敏感（默认 0.4）")
+    sp.add_argument("--min-shot", type=float, default=0.8, help="最短镜头（默认 0.8s）")
+    sp.add_argument("--max-shot", type=float, default=6.0, help="最长镜头（超出会被均分，默认 6s）")
+
+    sp = add("story", "剧本 → 分镜表（短剧/剧情片用这条）", cmd_story)
+    sp.add_argument("screenplay", help="剧本 JSON 路径")
+    sp.add_argument("--out", "-o", default="shotlist.json", help="分镜表写到哪")
+    sp.add_argument("--material", help="素材目录（默认取剧本里的 material_dir）")
+    sp.add_argument("--index", help="现成的素材索引 JSON（不给就扫目录）")
+    sp.add_argument("--cps", type=float, help="台词字数/秒，覆盖默认 4.6")
+    sp.add_argument("--target", type=float, help="目标总时长（秒），会做时长拟合")
+    sp.add_argument("--min-shot", type=float, help="最短镜头（默认 1.0s）")
+    sp.add_argument("--max-shot", type=float, help="最长镜头（默认 3.6s）")
+    sp.add_argument("--pause", type=float, help="每句后面的气口（默认 0.12s）")
+    sp.add_argument("--no-captions", action="store_true", help="不出字幕")
+    sp.add_argument("--vo-captions", action="store_true", help="旁白也出字幕（默认不出）")
+    sp.add_argument("--check-files", action="store_true", help="同时检查旁白/配乐文件是否存在")
 
     return parser
 

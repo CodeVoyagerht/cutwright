@@ -1,0 +1,39 @@
+{
+  "name": "地铁追凶 第1集",
+  "canvas": {"width": 1080, "height": 1920},
+  "fps": 30,
+  "material_dir": "materials",
+  "cast": {"lin": "林队", "zhou": "周小满"},
+  "music": {"file": "materials/bgm.mp3", "gain_db": -20},
+  "scenes": [
+    {
+      "id": "S1",
+      "slug": "地铁站台 · 夜",
+      "tags": ["subway", "night"],
+      "lines": [
+        {"type": "action", "text": "末班车进站，人群散开"},
+        {"who": "zhou", "text": "你确定他会来？"},
+        {"who": "lin", "text": "他欠我一条命"}
+      ]
+    },
+    {
+      "id": "S2",
+      "slug": "车厢 · 夜",
+      "tags": ["train", "close"],
+      "lines": [
+        {"who": "lin", "type": "voiceover", "text": "那晚我数到第七班车，他才出现"},
+        {"who": "zhou", "text": "别回头"},
+        {"type": "action", "text": "门缝里伸进一只手"}
+      ]
+    },
+    {
+      "id": "S3",
+      "slug": "出口 · 夜",
+      "tags": ["exit", "night"],
+      "lines": [
+        {"who": "lin", "text": "跑"},
+        {"type": "action", "text": "灯突然灭了"}
+      ]
+    }
+  ]
+}

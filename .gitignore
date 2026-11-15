@@ -57,3 +57,9 @@ _build/
 
 # 提交信息草稿，别进版本库
 .git-commit-msg.txt
+
+# 剧本示例：只留剧本与造素材的脚本，素材/索引/分镜表/成片都是跑出来的
+examples/story/materials/
+examples/story/materials.json
+examples/story/shotlist.json
+examples/story/out/

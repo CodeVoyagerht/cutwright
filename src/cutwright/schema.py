@@ -40,6 +40,10 @@ __all__ = [
     "SCHEMA_VERSION",
 ]
 
+#: 时间线连续性容差（秒）。手写分镜表与按帧网格算出的秒数都带四舍五入尾巴，
+#: 1e-6 的容差等于没有容差——1.867 + 1.633 会被判成空档。
+_CHAIN_EPS = 1e-3
+
 SCHEMA_VERSION = "1.0"
 
 # 关键词分隔符：半角与全角都认。中文输入法打出来的是全角「｜」，
@@ -615,9 +619,10 @@ def validate(shotlist: Shotlist, check_files: bool = False) -> List[Issue]:
             if not os.path.exists(p):
                 err("E017", f"素材不存在: {p}", where)
         # 时间线连续性：显式给了 tl_start 就必须接得上，没给就自动顺序排
-        if seg.tl_start is not None and seg.tl_start > seen_t + 1e-6:
+        # 容差 1 ms：手写分镜表与按帧网格算出来的秒数都带四舍五入尾巴，1e-6 等于没有容差，1.867+1.633 都会被判成空档
+        if seg.tl_start is not None and seg.tl_start > seen_t + _CHAIN_EPS:
             warn("W018", f"上一镜结束于 {seen_t:.3f}s，本镜从 {seg.tl_start:.3f}s 开始，留了空档", where)
-        elif seg.tl_start is not None and seg.tl_start < seen_t - 1e-6:
+        elif seg.tl_start is not None and seg.tl_start < seen_t - _CHAIN_EPS:
             warn("W019", f"本镜从 {seg.tl_start:.3f}s 开始，与上一镜（结束 {seen_t:.3f}s）重叠", where)
         seen_t = max(seen_t, (seg.tl_start if seg.tl_start is not None else seen_t) + seg.tl_dur)
 

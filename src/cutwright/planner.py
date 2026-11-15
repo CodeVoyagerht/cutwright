@@ -28,6 +28,7 @@ from .schema import (
     Shotlist,
     TextStyle,
     VideoSegment,
+    _CHAIN_EPS,
 )
 
 __all__ = [
@@ -40,7 +41,7 @@ __all__ = [
 ]
 
 # 文字样式的基准画布：所有像素值按 1080x1920 标定，换画布等比缩放。
-_BASE_W, _BASE_H = 1080, 1920
+_BASE_W, _BASE_H = 2160, 3840
 
 
 # --------------------------------------------------------------------------- #
@@ -77,7 +78,7 @@ class PlanReport:
 def default_styles(canvas: Optional[Canvas] = None) -> Dict[str, TextStyle]:
     """一套「竖屏口播/旅拍」能直接用的文字样式。
 
-    数值来自实拍项目标定（1080x1920），换画布时等比缩放，纵向留白按比例算，
+    数值来自实拍项目标定（2160x3840 的竖屏成片，字幕 145px），换画布时等比缩放，
     这样 720p 和 4K 出来的相对观感一致。
     """
     canvas = canvas or Canvas()
@@ -147,7 +148,7 @@ def normalize_shotlist(sl: Shotlist, *, trust_existing: bool = True
     for i, seg in enumerate(out.video_segments):
         if trust_existing and seg.tl_start is not None:
             start = seg.tl_start
-            if abs(start - cursor) > 1e-6:
+            if abs(start - cursor) > _CHAIN_EPS:
                 actions.append(
                     f"shot {i}: 保留显式 tl_start={start:.3f}s（与前一镜结束 "
                     f"{cursor:.3f}s 不连续）")

@@ -283,6 +283,23 @@ def _styled_chars(text: str) -> List[Tuple[str, str]]:
 # --------------------------------------------------------------------------- #
 # 渲染
 # --------------------------------------------------------------------------- #
+def _chars_that_fit(style: TextStyle, width_px: int) -> int:
+    """一行能塞几个字：取「样式上限」和「画布实际宽度」里小的那个。
+
+    两个都要管，因为它们是两种不同的错。``max_chars_per_line`` 管排版意愿；
+    画布宽度管物理事实——145px 的默认字幕套到 1080 宽的画布上，14 个字排出来
+    是 2030px，两边各被切掉一半。样式是给人写的，宽度这一层必须自己兜住。
+    """
+    limit = int(style.max_chars_per_line or 0)
+    height = float(style.font_height_px or 0.0)
+    if height <= 0 or width_px <= 0:
+        return limit
+    by_width = int((width_px * 0.92) // height)
+    if by_width < 1:
+        return 1
+    return by_width if limit <= 0 else min(limit, by_width)
+
+
 def render_text_png(text: str, style: TextStyle, canvas: tuple[int, int],
                     out_png: str, *, scale: float = 1.0) -> str:
     """把 ``text`` 按 ``style`` 画成 canvas 同尺寸的透明 PNG，返回绝对路径。
@@ -303,7 +320,8 @@ def render_text_png(text: str, style: TextStyle, canvas: tuple[int, int],
         body = _parse_color(style.color, (255, 255, 255, 255))
         keyword = _parse_color(style.keyword_color, (255, 213, 74, 255))
         stroke = _parse_color(style.stroke_color, (0, 0, 0, 255))
-        lines = _wrap_styled(_styled_chars(text), style.max_chars_per_line)
+        max_chars = _chars_that_fit(style, width)
+        lines = _wrap_styled(_styled_chars(text), max_chars)
         if lines:
             _draw_lines(image, lines, {"body": body, "kw": keyword}, stroke, style, scale)
 

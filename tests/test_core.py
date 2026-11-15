@@ -1,4 +1,4 @@
-﻿"""核心链路测试：schema → timeline → planner → qc → cli。
+"""核心链路测试：schema → timeline → planner → qc → cli。
 
 这些用例一条 ffmpeg 都不用跑，所以永远能在 CI 里跑。真渲染的用例在
 ``test_ffmpeg_backend.py``（那个会 skip）。
@@ -143,10 +143,16 @@ class TestTimeline(unittest.TestCase):
 
 class TestPlanner(unittest.TestCase):
     def test_default_styles_scale_with_canvas(self):
-        small = planner.default_styles()
+        """字号随画布等比放大，但落在实测标定的整数像素上，所以按比例断言。"""
+        small = planner.default_styles(__import__("cutwright").Canvas(1080, 1920))
         big = planner.default_styles(__import__("cutwright").Canvas(2160, 3840))
-        self.assertAlmostEqual(big["caption"].font_height_px,
-                               small["caption"].font_height_px * 2, places=0)
+        for role, style in small.items():
+            self.assertAlmostEqual(big[role].font_height_px,
+                                   style.font_height_px * 2,
+                                   delta=style.font_height_px * 0.05,
+                                   msg=f"{role} 没有按画布等比放大")
+        # 1080 画布上字幕必须放得下：72px 字号 × 14 字不进 1080 宽就该被折行逻辑接管
+        self.assertLess(small["caption"].font_height_px, 90)
 
     def test_normalize_fills_gaps(self):
         sl = _mini_shotlist()

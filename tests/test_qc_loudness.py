@@ -17,10 +17,18 @@ from cutwright import config, media, qc
 from . import tmpdir
 
 
+def _paths():
+    """没装 ffmpeg 的机器上这些用例没有意义，跳过而不是报错。"""
+    paths = config.discover()
+    if not (paths.ffmpeg and paths.ffprobe):
+        raise unittest.SkipTest("没有 ffmpeg/ffprobe，跳过响度检查用例")
+    return paths
+
+
 def _make_mp4(path: str, *, target_lufs: float, duration: float = 2.0,
               with_audio: bool = True) -> str:
     """造一条纯色 + 单音的测试片，响度由 ``loudnorm`` 定到 ``target_lufs``。"""
-    paths = config.discover()
+    paths = _paths()
     cmd = [paths.ffmpeg, "-y", "-hide_banner", "-loglevel", "error",
            "-f", "lavfi", "-i", f"color=c=0x336699:s=128x72:d={duration}:r=30"]
     if with_audio:
@@ -35,7 +43,7 @@ def _make_mp4(path: str, *, target_lufs: float, duration: float = 2.0,
 
 
 def _check(path: str) -> dict:
-    report = qc.check_render(path, paths=config.discover())
+    report = qc.check_render(path, paths=_paths())
     return {check.name: check for check in report.checks}
 
 
@@ -51,7 +59,7 @@ class LoudnessCheckTest(unittest.TestCase):
     def test_quiet_film_is_flagged_but_does_not_fail_the_report(self) -> None:
         with tmpdir("qc_loud") as scratch:
             path = _make_mp4(os.path.join(scratch, "quiet.mp4"), target_lufs=-26)
-            report = qc.check_render(path, paths=config.discover())
+            report = qc.check_render(path, paths=_paths())
             checks = {c.name: c for c in report.checks}
             quiet = checks["loudness_match"]
             self.assertFalse(quiet.ok, "比目标低 12 LU 不该判成「响度合适」")

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import shutil
 import sys
 
@@ -38,14 +39,40 @@ TARGETS = [
 ]
 
 
+def _is_our_skill(path: str) -> bool:
+    """目标目录是不是**这个**技能的一份安装。
+
+    覆盖前必须问这一句：用户可能把 ``--dir`` 指到自己的代码目录，而那里正好有个
+    叫 ``cutwright`` 的项目。``rmtree`` 一个同名目录是不可撤销的，宁可拒绝。
+    """
+    skill_md = os.path.join(path, "SKILL.md")
+    if not os.path.isfile(skill_md):
+        return False
+    try:
+        with open(skill_md, encoding="utf-8") as handle:
+            text = handle.read(2048)
+    except OSError:
+        return False
+    match = re.search(r"^name:\s*(.+?)\s*$", text, re.M)
+    if not match:
+        return False
+    return match.group(1).strip().strip("\"'") == SKILL_NAME
+
+
 def _install_one(dest_root: str, *, link: bool, dry: bool,
-                 force: bool) -> str:
+                 force: bool, force_any: bool = False) -> str:
     dest = os.path.join(dest_root, SKILL_NAME)
     if os.path.exists(dest):
         if not force:
             return f"跳过（已存在）: {dest}"
         if not dry:
-            shutil.rmtree(dest, ignore_errors=True)
+            if not force_any and not _is_our_skill(dest):
+                return (f"拒绝覆盖: {dest}（里面没有 SKILL.md，或 name 不是 "
+                        f"{SKILL_NAME}）——确认是你想删的目录后加 --force-any")
+            try:
+                shutil.rmtree(dest)
+            except OSError as exc:
+                return f"删不掉旧目录（{exc}）: {dest}"
     if dry:
         return f"会写入: {dest}"
     os.makedirs(os.path.dirname(dest), exist_ok=True)
@@ -67,6 +94,8 @@ def main(argv=None) -> int:
     ap.add_argument("--dir", help="--target dir 时的父目录")
     ap.add_argument("--link", action="store_true", help="用软链代替复制")
     ap.add_argument("--force", action="store_true", help="覆盖已存在的安装")
+    ap.add_argument("--force-any", action="store_true",
+                    help="连同名但不是技能的目录也删（危险，先自己确认）")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args(argv)
 
@@ -92,7 +121,7 @@ def main(argv=None) -> int:
     for _key, label, root in roots:
         print(f"\n{label}")
         print("  " + _install_one(root, link=args.link, dry=args.dry_run,
-                                  force=args.force))
+                                  force=args.force, force_any=args.force_any))
         count += 1
     print(f"\n{count} 个位置处理完毕"
           + ("（dry-run，未真正写入）" if args.dry_run else "") + "。")

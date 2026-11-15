@@ -46,6 +46,17 @@ def _hms(seconds: float) -> str:
     return f"{int(h)}:{int(m):02d}:{s:05.2f}" if h else f"{int(m)}:{s:05.2f}"
 
 
+def _mark(check: Dict[str, Any]) -> str:
+    """一条体检结论的标记。
+
+    **标记必须和定级一致**：error 级的失败才叫 FAIL，warn 级的失败叫 WARN。
+    以前一律打 FAIL、却按 warn 定级，于是出现「打印 FAIL、结论通过」的自相矛盾。
+    """
+    if check.get("ok"):
+        return "OK  "
+    return "FAIL" if check.get("severity", "error") == "error" else "WARN"
+
+
 def _parse_opts(pairs: Optional[List[str]]) -> Dict[str, Any]:
     """``--opt key=value`` → dict。值尽量按 JSON 解析，解析不了就当字符串。"""
     out: Dict[str, Any] = {}
@@ -279,10 +290,12 @@ def cmd_build(args: argparse.Namespace) -> int:
             _err(f"警告: {warning}")
         if "render_qc" in data:
             report = data["render_qc"]
-            print(f"\n成片体检: {'通过' if report['ok'] else '有问题'}")
+            warns = sum(1 for c in report["checks"]
+                        if not c["ok"] and c["severity"] != "error")
+            print("\n成片体检: " + ("通过" if report["ok"] else "有问题")
+                  + (f"（{warns} 条警告）" if warns and report["ok"] else ""))
             for check in report["checks"]:
-                mark = "OK  " if check["ok"] else "FAIL"
-                print(f"  [{mark}] {check['name']:16s} {check['detail']}")
+                print(f"  [{_mark(check)}] {check['name']:16s} {check['detail']}")
 
     if not result.ok:
         return 1
@@ -303,11 +316,15 @@ def cmd_qc(args: argparse.Namespace) -> int:
         return 0 if report.ok else 1
     print(f"时间线 {tl.name}  {len(tl.clips)} 镜 / {_hms(tl.duration)}")
     for check in report.checks:
-        mark = "OK  " if check.ok else "FAIL"
-        print(f"  [{mark}] {check.name:16s} {check.detail}")
+        print(f"  [{_mark(check)}] {check.name:16s} {check.detail}")
+    warns = [c for c in report.checks if not c.ok and c.severity != "error"]
     if not report.ok:
         _err(f"\n{len(report.failed)} 项未通过。")
         return 1
+    if warns:
+        print(f"\n通过，但有 {len(warns)} 条警告（不影响退出码）："
+              + "、".join(c.name for c in warns))
+        return 0
     print("\n全部通过。")
     return 0
 

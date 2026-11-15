@@ -240,20 +240,45 @@ def check_render(mp4: str, *, expect_duration: Optional[float] = None,
                    "有音轨" if info.has_audio else "没有音轨——检查 amix 输入是否为空")
 
     # --- 黑场 / 静音 ---
+    # 定级规则：整片黑 / 整片无声是「片子废了」，按 error 判；局部超阈值只是
+    # 「这一处该看一眼」，按 warn 判。两者在报告里用不同的标记显示，不能混。
     black = _scan(mp4, f"blackdetect=d={black_min_dur}:pix_th=0.10", paths)
     segments = re.findall(r"black_start:([\d.]+)\s+black_end:([\d.]+)", black)
     total_black = sum(float(b) - float(a) for a, b in segments)
-    report.add("no_long_black", not segments,
-               "无长黑场" if not segments else
-               f"{len(segments)} 段黑场，共 {total_black:.2f}s: " +
-               ", ".join(f"{float(a):.2f}-{float(b):.2f}s" for a, b in segments[:5]),
-               severity="warn" if segments else "info")
+    whole_black = bool(segments) and info.duration > 0 and total_black >= info.duration * 0.9
+    if not segments:
+        report.add("no_long_black", True, "无长黑场", severity="info")
+    else:
+        detail = (f"{len(segments)} 段黑场，共 {total_black:.2f}s: " +
+                  ", ".join(f"{float(a):.2f}-{float(b):.2f}s" for a, b in segments[:5]))
+        if whole_black:
+            detail = f"整片几乎全黑（{total_black:.2f}s / {info.duration:.2f}s）—— 检查拼接是否真的产出了画面"
+            report.add("no_long_black", False, detail, severity="error")
+        else:
+            report.add("no_long_black", False, detail, severity="warn")
 
     silent = _scan(mp4, f"silencedetect=n=-45dB:d={silence_min_dur}", paths)
     sil = re.findall(r"silence_start:\s*(-?[\d.]+)", silent)
-    report.add("no_long_silence", not sil,
-               "无长静音" if not sil else f"{len(sil)} 段超 {silence_min_dur}s 的静音",
-               severity="warn" if sil else "info")
+    sil_spans = [(float(a), float(b)) for a, b in
+                 re.findall(r"silence_start:\s*(-?[\d.]+).*?silence_end:\s*([\d.]+)", silent, re.S)]
+    total_silence = sum(b - a for a, b in sil_spans)
+    whole_silent = (bool(sil) and info.duration > 0
+                    and total_silence >= info.duration * 0.9)
+    if not sil:
+        report.add("no_long_silence", True, "无长静音", severity="info")
+    elif whole_silent:
+        report.add("no_long_silence", False,
+                   f"整片几乎无声（{total_silence:.2f}s / {info.duration:.2f}s 低于 -45dB）"
+                   "—— 检查环境声/BGM 是否真的混进来了",
+                   severity="error")
+        report.issues.append(Issue("error", "Q102",
+                                   f"整片无声：{total_silence:.2f}s 静音占成片 "
+                                   f"{total_silence / max(info.duration, 1e-6) * 100:.0f}%",
+                                   mp4))
+    else:
+        report.add("no_long_silence", False,
+                   f"{len(sil)} 段超 {silence_min_dur}s 的静音，共 {total_silence:.2f}s",
+                   severity="warn")
 
     return report
 

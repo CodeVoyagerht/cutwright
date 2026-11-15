@@ -1,0 +1,106 @@
+"""体检的定级与显示必须一致，退出码必须跟着定级走。
+
+这条 bug 的表现是：``qc`` 打出 ``[FAIL] no_long_silence``，同一屏却写着
+「全部通过。」，退出码 0。原因有两个叠在一起——
+
+1. 黑场/静音检出一律按 ``severity="warn"`` 存，而 ``QcReport.ok`` 只数 error；
+2. 显示层只看 ``ok``，一律打 ``FAIL``。
+
+于是出现「打印 FAIL、结论通过」。现在：整片黑/整片无声＝error，
+局部超阈值＝warn，显示层用 ``[FAIL]`` / ``[WARN]`` 区分。
+"""
+from __future__ import annotations
+
+import os
+import subprocess
+import unittest
+
+from . import tmpdir
+
+from cutwright import cli, config, qc
+from cutwright.qc import QcCheck, QcReport
+
+PATHS = config.discover()
+FFMPEG = PATHS.ffmpeg
+HAS_FFMPEG = bool(FFMPEG and os.path.isfile(FFMPEG))
+
+
+class ReportSeverityTest(unittest.TestCase):
+    """``ok`` 只数 error 级失败——这条语义本身是对的，要守住。"""
+
+    def test_warn_failure_does_not_fail_report(self):
+        report = QcReport()
+        report.add("no_long_silence", False, "1 段静音", severity="warn")
+        self.assertTrue(report.ok)
+        self.assertEqual([c.name for c in report.failed], ["no_long_silence"])
+
+    def test_error_failure_fails_report(self):
+        report = QcReport()
+        report.add("no_long_silence", False, "整片无声", severity="error")
+        self.assertFalse(report.ok)
+
+
+class MarkTest(unittest.TestCase):
+    """标记 = 定级。混用会让人（和 agent）读错。"""
+
+    def test_ok(self):
+        self.assertEqual(cli._mark({"ok": True, "severity": "error"}), "OK  ")
+
+    def test_error_failure_is_fail(self):
+        self.assertEqual(cli._mark({"ok": False, "severity": "error"}), "FAIL")
+
+    def test_warn_failure_is_warn(self):
+        self.assertEqual(cli._mark({"ok": False, "severity": "warn"}), "WARN")
+
+
+def _make_video(path: str, *, silent: bool) -> None:
+    cmd = [FFMPEG, "-y", "-hide_banner", "-loglevel", "error",
+           "-f", "lavfi", "-i", "color=c=0x405060:s=320x240:d=2:r=25"]
+    if silent:
+        cmd += ["-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo", "-t", "2"]
+    else:
+        cmd += ["-f", "lavfi", "-i", "sine=frequency=440:duration=2"]
+    cmd += ["-shortest", "-c:v", "libx264", "-preset", "ultrafast",
+            "-pix_fmt", "yuv420p", "-c:a", "aac", "-ar", "48000", path]
+    subprocess.run(cmd, capture_output=True, stdin=subprocess.DEVNULL, check=True)
+
+
+@unittest.skipUnless(HAS_FFMPEG, "没有 ffmpeg，跳过真片体检")
+class RenderSilenceTest(unittest.TestCase):
+    def test_whole_silent_film_is_error(self):
+        with tmpdir("qcsilent") as root:
+            film = os.path.join(root, "silent.mp4")
+            _make_video(film, silent=True)
+            report = qc.check_render(film, expect_duration=2.0,
+                                     expect_canvas=(320, 240))
+            check = next(c for c in report.checks if c.name == "no_long_silence")
+            self.assertFalse(check.ok, "整片无声没被检出")
+            self.assertEqual(check.severity, "error", "整片无声应判 error")
+            self.assertFalse(report.ok, "整片无声时报告不该判通过")
+
+    def test_film_with_sound_passes(self):
+        with tmpdir("qcsound") as root:
+            film = os.path.join(root, "sound.mp4")
+            _make_video(film, silent=False)
+            report = qc.check_render(film, expect_duration=2.0,
+                                     expect_canvas=(320, 240))
+            check = next(c for c in report.checks if c.name == "no_long_silence")
+            self.assertTrue(check.ok)
+            self.assertTrue(report.ok)
+
+    def test_cli_exit_code_follows_severity(self):
+        """整片无声时 ``qc`` 必须返回 1，输出里不能出现「全部通过」。"""
+        with tmpdir("qcexit") as root:
+            film = os.path.join(root, "silent.mp4")
+            _make_video(film, silent=True)
+            shotlist = os.path.join(root, "shotlist.json")
+            with open(shotlist, "w", encoding="utf-8") as handle:
+                handle.write('{"name":"x","canvas":{"width":320,"height":240},'
+                             '"fps":25,"video_segments":[{"file":"silent.mp4",'
+                             '"src_start":0,"src_dur":2}]}')
+            code = cli.main(["qc", shotlist, "--mp4", film])
+            self.assertEqual(code, 1)
+
+
+if __name__ == "__main__":
+    unittest.main()

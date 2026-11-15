@@ -310,11 +310,20 @@ class FFmpegBackend(Backend):
 
     def _extract_ambient(self, clip: TimelineClip, out_wav: str,
                          warnings: List[str]) -> None:
-        """抽一个镜头的现场声。``highpass=f=50`` 去掉风声/空调声的低频轰鸣。"""
+        """抽一个镜头的现场声。``highpass=f=50`` 去掉风声/空调声的低频轰鸣。
+
+        变速的镜头必须让声音跟着变：画面用了 ``setpts``，声音若原样抽出来再截到
+        ``tl_dur``，听到的是「前 N 秒原声」而不是「同一段被加快」，声音和嘴型
+        （或动作声）就对不上了。``atempo`` 保音高不变，正好配 ``setpts``。
+        """
+        chain = ["highpass=f=50"]
+        speed = float(clip.speed)
+        if abs(speed - 1.0) > 1e-6:
+            chain.append(_atempo_chain(speed))
         cmd = [
             self.paths.ffmpeg, "-y", "-hide_banner", "-loglevel", "error",
             "-ss", _f(clip.src_in), "-t", _f(clip.src_dur), "-i", clip.source,
-            "-vn", "-ac", "2", "-ar", "48000", "-af", "highpass=f=50",
+            "-vn", "-ac", "2", "-ar", "48000", "-af", ",".join(chain),
             out_wav,
         ]
         try:
@@ -662,6 +671,27 @@ def _f(value: float, digits: int = 4) -> str:
     if "." in text_value:
         text_value = text_value.rstrip("0").rstrip(".")
     return text_value or "0"
+
+
+def _atempo_chain(speed: float) -> str:
+    """把任意变速比拆成 ffmpeg ``atempo`` 能接受的一串（单级只吃 0.5–2.0）。
+
+    2.0 以上的倍速（或 0.25 的长慢镜）单级 ``atempo`` 会直接报错，
+    所以按 2 / 0.5 逐级拆开再串起来。``planner`` 把 speed 限在 0.25–4.0，
+    但手写分镜表可以写任意值，这里不假设输入合法。
+    """
+    ratio = float(speed)
+    if ratio <= 0:
+        return "atempo=1.0"
+    parts: List[str] = []
+    while ratio > 2.0:
+        parts.append(f"atempo={_f(2.0)}")
+        ratio /= 2.0
+    while ratio < 0.5:
+        parts.append(f"atempo={_f(0.5)}")
+        ratio /= 0.5
+    parts.append(f"atempo={_f(ratio)}")
+    return ",".join(parts)
 
 
 def _join_cmd(cmd: Sequence[str]) -> str:

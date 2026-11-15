@@ -239,6 +239,34 @@ def check_render(mp4: str, *, expect_duration: Optional[float] = None,
         report.add("has_audio", info.has_audio,
                    "有音轨" if info.has_audio else "没有音轨——检查 amix 输入是否为空")
 
+    # --- 响度 / 峰值 ---
+    # 后端会把成片拉到 target LUFS，但「做了」不等于「做到了」——这一层只读地量一遍。
+    if info.has_audio:
+        measured = _measure_loudness(mp4, paths)
+        if measured is not None:
+            lufs, peak = measured
+            drift = lufs - media.DEFAULT_LOUDNESS
+            ok = abs(drift) <= media.LOUDNESS_TOLERANCE
+            report.add("loudness_match", ok,
+                       "积分响度 %.1f LUFS（目标 %.1f，差 %+.1f，容差 ±%.0f）"
+                       % (lufs, media.DEFAULT_LOUDNESS, drift,
+                          media.LOUDNESS_TOLERANCE),
+                       severity="info" if ok else "warn")
+            if not ok:
+                report.issues.append(Issue(
+                    "warn", "Q103",
+                    "响度 %.1f LUFS 偏离目标 %.1f%+.1f——检查 --opt loudness 是否被关掉"
+                    % (lufs, media.DEFAULT_LOUDNESS, drift), mp4))
+            if peak is not None:
+                hot = peak > -1.0
+                report.add("true_peak", not hot,
+                           "真峰值 %.1f dBFS（上限 -1.0）" % peak,
+                           severity="warn" if hot else "info")
+                if hot:
+                    report.issues.append(Issue(
+                        "warn", "Q104",
+                        "真峰值 %.1f dBFS 太顶，平台转码容易削波" % peak, mp4))
+
     # --- 黑场 / 静音 ---
     # 定级规则：整片黑 / 整片无声是「片子废了」，按 error 判；局部超阈值只是
     # 「这一处该看一眼」，按 warn 判。两者在报告里用不同的标记显示，不能混。
@@ -281,6 +309,22 @@ def check_render(mp4: str, *, expect_duration: Optional[float] = None,
                    severity="warn")
 
     return report
+
+
+def _measure_loudness(mp4: str, paths: config.Paths) -> Optional[tuple]:
+    """量成片的积分响度与真峰值。量不出来返回 ``None``（老 ffmpeg 没有 ebur128）。
+
+    和 :func:`_scan` 一样只读 stderr：ebur128 的报告写在 stderr，退出码恒为 0。
+    """
+    text = _scan(mp4, "ebur128=peak=true", paths)
+    if not text:
+        return None
+    lufs_hits = re.findall(r"I:\s+(-?\d+\.\d+) LUFS", text)
+    if not lufs_hits:
+        return None
+    peak_hits = re.findall(r"Peak:\s+(-?\d+\.\d+) dBFS", text)
+    peak = float(peak_hits[-1]) if peak_hits else None
+    return float(lufs_hits[-1]), peak
 
 
 def _scan(mp4: str, afilter: str, paths: config.Paths) -> str:

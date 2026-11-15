@@ -53,7 +53,7 @@ SEGMENT_CRF = 15
 # 预览档：只求「能看、能对时间」，几分钟的片子几十秒出。
 # crf 28 + veryfast 的观感是「够看清字幕和构图」，不会用于交付。
 # 成片目标响度：短视频平台常见 -14 LUFS，峰值 -1 dBTP。
-DEFAULT_LOUDNESS = -14.0
+DEFAULT_LOUDNESS = media.DEFAULT_LOUDNESS
 PREVIEW_SEGMENT_CRF = 30
 PREVIEW_PRESET = "veryfast"
 

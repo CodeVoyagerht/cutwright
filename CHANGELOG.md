@@ -39,6 +39,11 @@
 
 ### 修复
 
+- **`qc` 会量响度与真峰值了**（20 项 → 22 项）：`loudness_match` 检查积分响度是否落在
+  `-14 LUFS ±3`、`true_peak` 检查真峰值不超过 `-1 dBTP`。后端把片子拉到目标响度是一件事，
+  真的拉到了是另一件事——以前没人验。偏轻/偏顶判 `warn`（不让整份体检失败），
+  但报告里会写明差多少。新增 `tests/test_qc_loudness.py`（3 例）。
+
 - **快编档与正式档的帧数一致性有回归用例**：`preview=true` 只该改画质，不该改时长——
   若哪天差一帧，`overlay` 的 `enable` 窗口就会错位。`test_preview_keeps_the_same_frame_count`
   逐帧数两条成片（实测同为 414 帧 / 13.800s）并断言相等。

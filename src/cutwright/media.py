@@ -120,6 +120,12 @@ def _require(paths: config.Paths, what: str) -> str:
 # --------------------------------------------------------------------------- #
 # 探测
 # --------------------------------------------------------------------------- #
+# 成片目标响度（LUFS）：短视频平台普遍按 -14 LUFS 播放，峰值留 -1 dBTP。
+# 定义在这里是因为 ffmpeg 后端要「做」、qc 要「查」，两边得用同一个数。
+DEFAULT_LOUDNESS = -14.0
+LOUDNESS_TOLERANCE = 3.0
+
+
 def probe(path: str, paths: Optional[config.Paths] = None,
           use_cache: bool = True) -> MediaInfo:
     """探测单个媒体文件。结果按「路径 + mtime + 大小」缓存。"""

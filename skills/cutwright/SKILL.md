@@ -4,9 +4,9 @@ description: 把分镜表 JSON 剪成成片、剪映草稿或达芬奇时间线�
 license: MIT
 compatibility: 需要 Python 3.9+。ffmpeg 后端需 ffmpeg/ffprobe 在 PATH；剪映后端需剪映专业版 11.x；达芬奇后端需 Resolve Studio 且开启外部脚本。核心零第三方依赖，烧字幕需 Pillow。
 metadata:
-  author: beiyusheng
+  author: CodeVoyagerht
   version: "0.1.0"
-  repo: https://github.com/beiyusheng/cutwright
+  repo: https://github.com/CodeVoyagerht/cutwright
 ---
 
 # 剪匠 cutwright

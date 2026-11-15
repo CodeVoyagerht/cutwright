@@ -1,4 +1,4 @@
-# 剪匠 · cutwright
+﻿# 剪匠 · cutwright
 
 > 一份分镜表 JSON，三条产线：**直出成片**、**剪映草稿**、**达芬奇时间线**。
 
@@ -89,7 +89,7 @@ cutwright build shotlist.json -b resolve  --opt grade=lut.cube # 建线并逐镜
 ## 安装
 
 ```bash
-git clone https://github.com/beiyusheng/cutwright.git
+git clone https://github.com/CodeVoyagerht/cutwright.git
 cd cutwright
 pip install -e .            # 核心零依赖
 pip install -e ".[render]"  # 需要烧字幕/花字时（Pillow）
@@ -161,8 +161,11 @@ python skills/cutwright/scripts/install.py --target all
 python -m unittest discover -s tests -t .
 ```
 
-153 个用例，零依赖，`git clone` 完就能跑。真渲染的用例会检测 ffmpeg，没有就 skip
+158 个用例，零依赖，`git clone` 完就能跑。真渲染的用例会检测 ffmpeg，没有就 skip
 而不是 fail——CI 上的 `windows-latest` 有 ffmpeg，本地没装的开发者也不该被卡住。
+
+这台机器上的实测记录（doctor / validate / plan / build / qc / 剪映草稿 / 158 个用例）
+都在 [docs/acceptance.md](docs/acceptance.md)，包括**哪些是未验收项**。
 
 契约测试（`tests/test_cli_contract.py`）锁死的是**机器可读的部分**：`--json` 的字段、
 退出码、stderr 与 stdout 的分工。这些一旦漂移，最先坏的是别人的自动化。

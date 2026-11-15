@@ -34,8 +34,8 @@ dev = ["pillow>=10.0", "numpy>=1.24"]
 cutwright = "cutwright.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/beiyusheng/cutwright"
-Issues = "https://github.com/beiyusheng/cutwright/issues"
+Homepage = "https://github.com/CodeVoyagerht/cutwright"
+Issues = "https://github.com/CodeVoyagerht/cutwright/issues"
 
 [tool.setuptools]
 package-dir = { "" = "src" }

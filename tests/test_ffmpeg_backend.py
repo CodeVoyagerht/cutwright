@@ -634,6 +634,52 @@ class FFmpegBuildTest(unittest.TestCase):
         self.assertTrue(result.ok, msg=result.error)
         self.assertFalse(any("循环" in w for w in result.warnings), result.warnings)
 
+    # -- 配乐给人声让路（ducking） ----------------------------------------- #
+    def _duck_film(self, name: str, **options):
+        raw = {
+            "name": name, "canvas": {"width": CANVAS[0], "height": CANVAS[1]},
+            "fps": FPS,
+            "video_segments": [{"file": self.clips[0], "src_start": 0.0,
+                                "src_dur": CLIP_SECONDS}],
+            # 配乐要比人声大，侧链压下去才量得出来：实测 gain=0 时只差 0.8 dB，
+            # +12 dB 时差 4.6 dB——旁白轨本来就比配乐响，那是正常混音，不是 bug。
+            "audio_segments": [{"file": self.music, "tl_start": 0.0,
+                                "tl_dur": CLIP_SECONDS, "gain_db": 12.0}],
+        }
+        timeline = Timeline.from_shotlist(Shotlist.from_dict(raw))
+        # 关掉响度归一化：它会把两版的整体电平拉平，正是这里要避免的。
+        settings = {"keep_temp": True, "loudness": False}
+        settings.update(options)
+        result = FFmpegBackend(paths=self.paths, options=settings).build(
+            timeline, os.path.join(self.scratch, "out_" + name))
+        self.assertTrue(result.ok, msg=result.error)
+        return result.artifacts[0]
+
+    def test_music_ducks_under_ambient_voice(self):
+        ducked = media.mean_volume_db(self._duck_film("duck_on"), self.paths)
+        flat = media.mean_volume_db(self._duck_film("duck_off", duck=False),
+                                    self.paths)
+        self.assertLess(ducked, flat - 2.0,
+                        "人声在的时候配乐应当让路：%.1f vs %.1f dB" % (ducked, flat))
+
+    def test_ducking_is_skipped_without_ambient(self):
+        raw = {
+            "name": "noamb", "canvas": {"width": CANVAS[0], "height": CANVAS[1]},
+            "fps": FPS,
+            "video_segments": [{"file": self.clips[2], "src_start": 0.0,
+                                "src_dur": CLIP_SECONDS}],
+            "audio_segments": [{"file": self.music, "tl_start": 0.0,
+                                "tl_dur": CLIP_SECONDS, "gain_db": 0.0}],
+        }
+        timeline = Timeline.from_shotlist(Shotlist.from_dict(raw))
+        result = FFmpegBackend(paths=self.paths,
+                               options={"keep_temp": True, "loudness": False}).build(
+            timeline, os.path.join(self.scratch, "out_noamb"))
+        self.assertTrue(result.ok, msg=result.error)
+        # 没有环境声就没有侧链，配乐不该被压（这里只要求不报错、电平正常）。
+        level = media.mean_volume_db(result.artifacts[0], self.paths)
+        self.assertGreater(level, -40.0)
+
     # -- 静帧 -------------------------------------------------------------- #
     def _still_png(self, name: str = "still.png") -> str:
         path = os.path.join(self.scratch, name)

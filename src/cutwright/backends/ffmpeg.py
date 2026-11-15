@@ -563,13 +563,14 @@ class FFmpegBackend(Backend):
         graph.append(f"[{current}]{','.join(tail)}[vout]")
 
         audio_graph: List[str] = []
-        mix_pads: List[str] = []
+        music_pads: List[str] = []
+        ambient_src: Optional[str] = None
 
-        # 环境声放第一个：amix 的 duration=first 以它为总长度，画面有多长
+        # 环境声是「主音轨」：amix 的 duration=first 以它为总长度，画面有多长
         # 音轨就有多长，不会被某段 BGM 截短。
         if ambient:
             cmd.extend(["-i", ambient])
-            mix_pads.append(f"[{index}:a]")
+            ambient_src = f"{index}:a"
             index += 1
 
         for item in self._music_items(timeline):
@@ -584,27 +585,49 @@ class FFmpegBackend(Backend):
             need_loop = self._music_needs_loop(item, src_in, dur, warnings)
             audio_graph.append(self._music_graph(index, pad, item, start, dur,
                                                  loop=need_loop))
-            mix_pads.append(f"[{pad}]")
+            music_pads.append(f"[{pad}]")
             index += 1
 
+        # 配乐链要先声明：下面的混音图会引用这些 [mN] 标签。
+        graph.extend(audio_graph)
+
         mix_out = "[aout]"
-        if mix_pads:
-            if len(mix_pads) == 1:
-                graph.append(f"{mix_pads[0]}anull[aout]")
+        mixed = bool(ambient_src) or bool(music_pads)
+        if ambient_src and music_pads and self._duck_enabled():
+            # 人声盖住配乐：环境声当侧链，BGM 在被压的那几秒自己让路。
+            # 固定 0.30 音量做不到这件事——它只能让配乐整体偏小。
+            graph.append(f"[{ambient_src}]asplit=2[amb0][amb1]")
+            if len(music_pads) == 1:
+                graph.append(f"{music_pads[0]}anull[mus0]")
             else:
-                graph.append("".join(mix_pads)
-                             + f"amix=inputs={len(mix_pads)}:duration=first:normalize=0"
+                graph.append("".join(music_pads)
+                             + f"amix=inputs={len(music_pads)}:duration=first"
+                               ":normalize=0[mus0]")
+            graph.append(
+                f"[mus0][amb1]sidechaincompress="
+                f"threshold={_f(self._duck_threshold())}"
+                f":ratio={_f(self._duck_ratio())}"
+                ":attack=20:release=350[mus1]")
+            graph.append("[amb0][mus1]amix=inputs=2:duration=first:normalize=0[aout]")
+        elif mixed:
+            pads = ([f"[{ambient_src}]"] if ambient_src else []) + music_pads
+            if len(pads) == 1:
+                graph.append(f"{pads[0]}anull[aout]")
+            else:
+                graph.append("".join(pads)
+                             + f"amix=inputs={len(pads)}:duration=first:normalize=0"
                              + "[aout]")
+
+        if mixed:
             target = self._loudness_target()
             if target is not None:
                 # 每个镜头只对齐到 -20 dBFS，混完整体还是偏轻；成片这一层必须
                 # 有响度归一化，否则手机上听着比参考片小一截。
                 graph.append(f"[aout]loudnorm=I={_f(target)}:TP=-1.0:LRA=11[afin]")
                 mix_out = "[afin]"
-        graph.extend(audio_graph)
 
         cmd.extend(["-filter_complex", ";".join(graph), "-map", "[vout]"])
-        if mix_pads:
+        if mixed:
             cmd.extend(["-map", mix_out, "-c:a", "aac", "-b:a", "192k",
                         "-ar", "48000", "-ac", "2"])
         else:
@@ -677,6 +700,26 @@ class FFmpegBackend(Backend):
             parts.append(f"fade=t=out:st={_f(fade_start)}:d={_f(min(fade_out, dur))}:alpha=1")
         return f"[{input_index}:v]{','.join(parts)}[{label}]"
 
+    def _duck_enabled(self) -> bool:
+        """配乐要不要给人声让路。默认开；``--opt duck=false`` 关掉。"""
+        return bool(self.options.get("duck", True))
+
+    def _duck_threshold(self) -> float:
+        raw = self.options.get("duck_threshold", 0.05)
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            return 0.05
+        return value if 0.001 <= value <= 1.0 else 0.05
+
+    def _duck_ratio(self) -> float:
+        raw = self.options.get("duck_ratio", 8.0)
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            return 8.0
+        return value if 1.0 <= value <= 20.0 else 8.0
+
     def _loudness_target(self) -> Optional[float]:
         """成片目标响度（LUFS）。``loudness=false`` / ``0`` 关掉这一层。"""
         raw = self.options.get("loudness", DEFAULT_LOUDNESS)
@@ -727,6 +770,9 @@ class FFmpegBackend(Backend):
         ]
         if fade > 0:
             chain.append(f"afade=t=out:st={_f(max(0.0, dur - fade))}:d={_f(fade)}")
+        # sidechaincompress 要求主路与侧链采样率/声道一致，这里统一成成片规格。
+        chain.append("aresample=48000")
+        chain.append("aformat=sample_fmts=fltp:channel_layouts=stereo")
         return f"[{input_index}:a]{','.join(chain)}[{pad}]"
 
     # -- 小工具 ------------------------------------------------------------ #

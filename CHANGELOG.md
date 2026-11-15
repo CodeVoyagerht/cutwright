@@ -39,6 +39,12 @@
 
 ### 修复
 
+- **配乐给人声让路（ducking）**：混音时以环境声为侧链跑 `sidechaincompress`，
+  人声一进来配乐自己退下去、说完再回来。以前配乐是固定音量相加，音乐一响就压住台词。
+  三个旋钮：`--opt duck=false` 关掉、`duck_threshold`（默认 0.05）、`duck_ratio`（默认 8）。
+  实测（配乐比人声响 12 dB 时）开启后整体电平低 4.6 dB；没有环境声时自动跳过。
+  新增 `test_music_ducks_under_ambient_voice` 与 `test_ducking_is_skipped_without_ambient`。
+
 - **成片响度归一化**：混完过 `loudnorm` 拉到 `--opt loudness`（默认 -14 LUFS、峰值 -1 dBTP）。
   以前只有「每个镜头对齐到 -20 dBFS 均值」这一步，混出来整体偏轻——66 镜那条成片峰值
   -15.3 dB、RMS -19.6 dB，手机外放明显比参考片小一截；现在同一条片子积分响度落在 -14 附近。

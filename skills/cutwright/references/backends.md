@@ -33,6 +33,9 @@ cutwright build shotlist.json -b resolve  --opt grade=lut.cube
 | `cache` | `true` | 切片按内容摘要复用（`_build/seg_<digest>.mp4`） |
 | `preview` | `false` | 快编档：切片 `-crf 30 -preset veryfast`，成片 `26/veryfast` |
 | `keep_temp` | `true` | 保留 `_build/` 中间件（复用靠它） |
+| `duck` | `true` | 配乐给人声让路（侧链压缩，以环境声为侧链）。关掉就是固定音量相加 |
+| `duck_threshold` | `0.05` | 侧链触发阈值（0.001–1.0，线性）。人声很轻时压不下去就调小 |
+| `duck_ratio` | `8` | 压缩比（1–20）。越大让路越狠 |
 | `loudness` | `-14` | 成片目标响度（LUFS）。混完统一过 `loudnorm`，峰值压到 -1 dBTP；`false` / `0` 关掉，保留原始电平 |
 | `music_loop` | `true` | 配乐比该段短时循环铺满；`false` 就只警告、尾巴留静音 |
 | `dry_run` | `false` | 只打印命令不执行 |

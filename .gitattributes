@@ -1,0 +1,24 @@
+# 统一换行：仓库在 Windows/macOS/Linux 三处被打开过，
+# 不做归一化会让每条换行都变成一个假 diff。
+* text=auto
+
+*.py      text eol=lf
+*.md      text eol=lf
+*.json    text eol=lf
+*.yml     text eol=lf
+*.yaml    text eol=lf
+*.txt     text eol=lf
+*.sh      text eol=lf
+.gitignore     text eol=lf
+.gitattributes text eol=lf
+
+# 二进制：让 git 别试
+*.png     binary
+*.jpg     binary
+*.jpeg    binary
+*.mp4     binary
+*.mov     binary
+*.mp3     binary
+*.wav     binary
+*.cube    binary
+*.dll     binary

@@ -1,0 +1,95 @@
+{
+  "name": "demo-reel",
+  "material_dir": "materials",
+  "asset_dir": "materials",
+  "canvas": { "width": 1080, "height": 1920 },
+  "fps": 30,
+  "total_duration": 13.8,
+  "acts": [
+    { "key": "hook", "name": "钩子", "start": 0.0, "dur": 2.0 },
+    { "key": "body", "name": "主体", "start": 2.0, "dur": 9.8 },
+    { "key": "end", "name": "收尾", "start": 11.8, "dur": 2.0 }
+  ],
+  "video_segments": [
+    { "act": "hook", "shot": "01", "file": "clip01.mp4", "src_start": 0.4, "src_dur": 2.0,
+      "tl_start": 0.0, "desc": "竖屏主镜头开篇，直接进画" },
+    { "act": "body", "shot": "02", "file": "clip02.mp4", "src_start": 1.0, "src_dur": 2.2,
+      "tl_start": 2.0, "cx": 0.5, "desc": "横屏素材裁进竖屏，居中取景" },
+    { "act": "body", "shot": "03", "file": "clip03.mp4", "src_start": 0.2, "src_dur": 1.8,
+      "tl_start": 4.2, "zoom": "in", "zoom_amount": 0.07, "desc": "特写缓推" },
+    { "act": "body", "shot": "04", "file": "clip04.mp4", "src_start": 0.0, "src_dur": 2.0,
+      "tl_start": 6.0, "speed": 1.25, "desc": "快节奏段轻微提速" },
+    { "act": "body", "shot": "05", "file": "clip05.mp4", "src_start": 0.5, "src_dur": 2.4,
+      "tl_start": 7.6, "zoom": "out", "zoom_amount": 0.05, "desc": "收束前的缓拉" },
+    { "act": "body", "shot": "06", "file": "clip06.mp4", "src_start": 0.3, "src_dur": 1.8,
+      "tl_start": 10.0, "desc": "细节补充" },
+    { "act": "end", "shot": "07", "file": "clip07.mp4", "src_start": 0.0, "src_dur": 2.0,
+      "tl_start": 11.8, "zoom": "in", "zoom_amount": 0.08, "desc": "收尾镜头" }
+  ],
+  "text_segments": [
+    { "text": "一份分镜表，三条产线", "tl_start": 0.25, "tl_dur": 1.7, "style": "title" },
+    { "text": "自动裁剪｜变速｜补增益", "tl_start": 2.35, "tl_dur": 1.6, "style": "caption" },
+    { "text": "关键帧对得上", "tl_start": 4.45, "tl_dur": 1.3, "style": "huazi" },
+    { "text": "字幕跟着切点走", "tl_start": 6.25, "tl_dur": 1.4, "style": "caption" },
+    { "text": "光比自动补齐", "tl_start": 8.3, "tl_dur": 1.4, "style": "caption" },
+    { "text": "剪匠 · cutwright", "tl_start": 12.3, "tl_dur": 1.3, "style": "end" }
+  ],
+  "vo_segments": [
+    { "text": "一条片子，从一张表开始。", "tl_start": 0.3, "tl_dur": 1.8, "act": "hook" },
+    { "text": "镜头顺序、时长、字幕位置，全在表里。", "tl_start": 2.4, "tl_dur": 2.2, "act": "body" },
+    { "text": "剩下的交给产线。", "tl_start": 11.9, "tl_dur": 1.6, "act": "end" }
+  ],
+  "audio_segments": [
+    { "file": "bgm.mp3", "tl_start": 0.0, "tl_dur": 12.9, "kind": "music" }
+  ],
+  "image_overlays": [
+    { "file": "frame.png", "tl_start": 7.6, "tl_dur": 3.0, "fade": 0.2, "slide_px": 24, "slide_dur": 0.28 }
+  ],
+  "styles": {
+    "caption": {
+      "role": "caption",
+      "font_height_px": 62,
+      "color": "#FFFFFF",
+      "keyword_color": "#FFD54A",
+      "stroke_color": "#000000",
+      "stroke_width_px": 6,
+      "align": "center",
+      "bottom_margin_px": 300,
+      "max_chars_per_line": 14
+    },
+    "title": {
+      "role": "title",
+      "font_height_px": 88,
+      "color": "#FFFFFF",
+      "stroke_color": "#000000",
+      "stroke_width_px": 8,
+      "align": "center",
+      "center_ratio_y": 0.68
+    },
+    "huazi": {
+      "role": "huazi",
+      "font_height_px": 132,
+      "color": "#FFD400",
+      "stroke_color": "#000000",
+      "stroke_width_px": 16,
+      "align": "center",
+      "center_ratio_y": 0.66,
+      "rotation_deg": -7,
+      "anim": "slide_in_left_zoom"
+    },
+    "end": {
+      "role": "end",
+      "font_height_px": 96,
+      "color": "#FFFFFF",
+      "stroke_color": "#000000",
+      "stroke_width_px": 8,
+      "align": "center",
+      "center_ratio_y": 0.62
+    },
+    "vo_hidden": {
+      "role": "vo_hidden",
+      "font_height_px": 48,
+      "invisible": true
+    }
+  }
+}

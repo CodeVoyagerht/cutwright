@@ -1,0 +1,56 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+
+# 测试与临时
+.tmp/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# 本项目的产物
+out/
+out-*/
+*.report.json
+*.qc.json
+renders/
+
+# 演示素材（生成物，用 examples/demo/make_media.py 现造）
+examples/demo/materials/
+examples/demo/out/
+
+# 剪映草稿（绝不入库；里面有绝对路径与本机账号信息）
+**/draft_content.json
+**/draft_meta_info.json
+**/root_meta_info.json
+*.bak-*
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 子代理与测试留下的临时目录（不进仓库）
+.tmp-jianying/
+.smoke-*/
+.probeimg-*/
+smoke-*/
+tests/_tmp/
+tests/_last_run.txt
+.e2e/
+
+# 子代理/手动 e2e 的产物目录
+_e2e/
+cutwright_build_*/
+tmpj/
+out/
+_build/

@@ -1,0 +1,72 @@
+{
+  "name": "示例_竖屏口播",
+  "material_dir": "materials",
+  "asset_dir": "assets",
+  "canvas": { "width": 1080, "height": 1920 },
+  "fps": 30,
+  "total_duration": 14.5,
+  "acts": [
+    { "key": "hook", "name": "开场钩子", "start": 0.0, "dur": 3.0 },
+    { "key": "body", "name": "正片", "start": 3.0, "dur": 9.5 },
+    { "key": "end", "name": "收尾", "start": 12.5, "dur": 2.0 }
+  ],
+  "video_segments": [
+    { "act": "hook", "shot": 1, "file": "clip01.mp4", "src_start": 2.0, "src_dur": 2.4,
+      "zoom": "in", "zoom_amount": 0.06, "desc": "开场推进" },
+    { "act": "hook", "shot": 2, "file": "clip02.mp4", "src_start": 0.0, "src_dur": 1.8,
+      "cx": 0.4, "desc": "横向素材裁左侧" },
+    { "act": "body", "shot": 3, "file": "clip03.mp4", "src_start": 1.2, "src_dur": 2.6,
+      "desc": "手部特写" },
+    { "act": "body", "shot": 4, "file": "clip04.mp4", "src_start": 0.0, "src_dur": 2.2,
+      "speed": 1.25, "desc": "快节奏转场" },
+    { "act": "body", "shot": 5, "file": "clip05.mp4", "src_start": 3.4, "src_dur": 2.4,
+      "zoom": "out", "zoom_amount": 0.05, "desc": "拉开收束" },
+    { "act": "body", "shot": 6, "file": "clip06.mp4", "src_start": 0.0, "src_dur": 2.3,
+      "desc": "细节补充" },
+    { "act": "end", "shot": 7, "file": "clip07.mp4", "src_start": 0.6, "src_dur": 2.0,
+      "desc": "收尾定格" }
+  ],
+  "text_segments": [
+    { "text": "这样拍|竖屏才好看", "tl_start": 0.35, "tl_dur": 2.1, "style": "caption" },
+    { "text": "第一句", "tl_start": 2.9, "tl_dur": 1.7, "style": "huazi" },
+    { "text": "第二步走位要|贴边", "tl_start": 5.1, "tl_dur": 2.3, "style": "caption" },
+    { "text": "最后一句记住", "tl_start": 9.0, "tl_dur": 2.0, "style": "title" },
+    { "text": "关注我，下期见", "tl_start": 12.6, "tl_dur": 1.8, "style": "end" }
+  ],
+  "vo_segments": [
+    { "act": "hook", "text": "先说结论。", "tl_start": 0.5, "tl_dur": 1.8, "style": "vo_hidden" },
+    { "act": "body", "text": "第一，站稳再取景。", "tl_start": 3.1, "tl_dur": 3.0, "style": "vo_hidden" },
+    { "act": "body", "text": "第二，把主体放在三分线上。", "tl_start": 6.4, "tl_dur": 3.4, "style": "vo_hidden" },
+    { "act": "end", "text": "记住这一条就够了。", "tl_start": 10.2, "tl_dur": 2.6, "style": "vo_hidden" }
+  ],
+  "audio_segments": [
+    { "file": "bgm.mp3", "tl_start": 0.0, "tl_dur": 13.6, "kind": "music" }
+  ],
+  "image_overlays": [
+    { "file": "frame.png", "tl_start": 5.2, "tl_dur": 2.2, "fade": 0.2, "fade_out": true }
+  ],
+  "styles": {
+    "caption": {
+      "font_height_px": 145, "color": "#FFFFFF", "keyword_color": "#FFD54A",
+      "stroke_color": "#000000", "stroke_width_px": 12,
+      "bottom_margin_px": 520, "max_chars_per_line": 14
+    },
+    "title": {
+      "font_height_px": 150, "color": "#FFFFFF", "keyword_color": "#FFD54A",
+      "stroke_color": "#000000", "stroke_width_px": 10,
+      "center_ratio_y": 0.68, "max_chars_per_line": 12
+    },
+    "huazi": {
+      "font_height_px": 235, "color": "#FFD400", "keyword_color": "#FFD400",
+      "stroke_color": "#000000", "stroke_width_px": 27,
+      "center_ratio_y": 0.66, "rotation_deg": -7,
+      "anim": "slide_in_left_zoom", "max_chars_per_line": 6
+    },
+    "end": {
+      "font_height_px": 195, "color": "#FFFFFF", "keyword_color": "#FFD54A",
+      "stroke_color": "#000000", "stroke_width_px": 14,
+      "center_ratio_y": 0.62, "max_chars_per_line": 10
+    },
+    "vo_hidden": { "font_height_px": 100, "invisible": true }
+  }
+}

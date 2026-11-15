@@ -163,10 +163,10 @@ python skills/cutwright/scripts/install.py --target all
 python -m unittest discover -s tests -t .
 ```
 
-180 个用例，零依赖，`git clone` 完就能跑。真渲染的用例会检测 ffmpeg，没有就 skip
+181 个用例，零依赖，`git clone` 完就能跑。真渲染的用例会检测 ffmpeg，没有就 skip
 而不是 fail——CI 上的 `windows-latest` 有 ffmpeg，本地没装的开发者也不该被卡住。
 
-这台机器上的实测记录（doctor / validate / plan / build / qc / 剪映草稿 / 180 个用例）
+这台机器上的实测记录（doctor / validate / plan / build / qc / 剪映草稿 / 181 个用例）
 都在 [docs/acceptance.md](docs/acceptance.md)，包括**哪些是未验收项**。
 
 契约测试（`tests/test_cli_contract.py`）锁死的是**机器可读的部分**：`--json` 的字段、

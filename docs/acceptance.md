@@ -109,7 +109,7 @@ cutwright build examples\demo\shotlist.json -b jianying -o .tmp-jy --opt encrypt
 
 ```
 python -m unittest discover -s tests -t .
-Ran 180 tests in 30.509s
+Ran 181 tests in 40.367s
 OK (skipped=2)
 ```
 

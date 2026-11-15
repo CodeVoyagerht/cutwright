@@ -46,15 +46,23 @@ def _hms(seconds: float) -> str:
     return f"{int(h)}:{int(m):02d}:{s:05.2f}" if h else f"{int(m)}:{s:05.2f}"
 
 
-def _mark(check: Dict[str, Any]) -> str:
+def _mark(check: Any) -> str:
     """一条体检结论的标记。
 
     **标记必须和定级一致**：error 级的失败才叫 FAIL，warn 级的失败叫 WARN。
     以前一律打 FAIL、却按 warn 定级，于是出现「打印 FAIL、结论通过」的自相矛盾。
+
+    吃两种喂法：``build`` 的成片体检拿到的是 ``report["checks"]``（dict），
+    ``qc`` 拿到的是 ``QcCheck`` 对象——所以不能假定是 dict。
     """
-    if check.get("ok"):
+    def field(name: str, default: Any = None) -> Any:
+        if isinstance(check, dict):
+            return check.get(name, default)
+        return getattr(check, name, default)
+
+    if field("ok"):
         return "OK  "
-    return "FAIL" if check.get("severity", "error") == "error" else "WARN"
+    return "FAIL" if field("severity", "error") == "error" else "WARN"
 
 
 def _parse_opts(pairs: Optional[List[str]]) -> Dict[str, Any]:

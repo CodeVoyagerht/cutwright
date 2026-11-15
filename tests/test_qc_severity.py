@@ -102,5 +102,57 @@ class RenderSilenceTest(unittest.TestCase):
             self.assertEqual(code, 1)
 
 
+def _make_partial_silence(path: str) -> None:
+    """3 秒片子：0–0.3s 有声、0.3–2.7s 静、2.7–3.0s 有声。
+
+    静音 2.4s 超过 1.0s 的阈值，但不到全片九成（2.7s），所以该判 warn。
+    """
+    cmd = [FFMPEG, "-y", "-hide_banner", "-loglevel", "error",
+           "-f", "lavfi", "-i", "color=c=0x405060:s=320x240:d=3:r=25",
+           "-f", "lavfi", "-i", "sine=frequency=440:duration=0.3",
+           "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo",
+           "-f", "lavfi", "-i", "sine=frequency=440:duration=0.3",
+           "-filter_complex",
+           "[1:a]atrim=0:0.3,asetpts=PTS-STARTPTS[a1];"
+           "[2:a]atrim=0:2.4,asetpts=PTS-STARTPTS[a2];"
+           "[3:a]atrim=0:0.3,asetpts=PTS-STARTPTS[a3];"
+           "[a1][a2][a3]concat=n=3:v=0:a=1[aout]",
+           "-map", "0:v", "-map", "[aout]",
+           "-shortest", "-c:v", "libx264", "-preset", "ultrafast",
+           "-pix_fmt", "yuv420p", "-c:a", "aac", "-ar", "48000", path]
+    subprocess.run(cmd, capture_output=True, stdin=subprocess.DEVNULL, check=True)
+
+
+@unittest.skipUnless(HAS_FFMPEG, "没有 ffmpeg，跳过真片体检")
+class WarnPathTest(unittest.TestCase):
+    def test_partial_silence_is_warn_not_fail(self):
+        """局部静音是 warn：打印 ``[WARN]``、结论通过、退出码 0。
+
+        这条用例顺带守住另一件事——``qc`` 的检查项是 ``QcCheck`` 对象，
+        显示层如果按 dict 喂就会抛 ``AttributeError``（真发生过）。
+        """
+        import contextlib
+        import io
+
+        with tmpdir("qcwarn") as root:
+            film = os.path.join(root, "partial.mp4")
+            _make_partial_silence(film)
+            shotlist = os.path.join(root, "shotlist.json")
+            with open(shotlist, "w", encoding="utf-8") as handle:
+                handle.write('{"name":"x","canvas":{"width":320,"height":240},'
+                             '"fps":25,"video_segments":[{"file":"partial.mp4",'
+                             '"src_start":0,"src_dur":3}]}')
+
+            buffer = io.StringIO()
+            with contextlib.redirect_stdout(buffer):
+                code = cli.main(["qc", shotlist, "--mp4", film])
+            printed = buffer.getvalue()
+
+            self.assertNotIn("AttributeError", printed)
+            self.assertIn("[WARN] no_long_silence", printed)
+            self.assertNotIn("[FAIL] no_long_silence", printed)
+            self.assertEqual(code, 0)
+
+
 if __name__ == "__main__":
     unittest.main()

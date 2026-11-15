@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import ctypes
 import json
+import contextlib
 import os
 import re
 import shutil
@@ -99,6 +100,43 @@ NO_DLL_HINT = (
 
 class CryptoError(RuntimeError):
     """加解密失败。消息里一定带「怎么办」，调用方可以直接打印给用户看。"""
+
+
+@contextlib.contextmanager
+def _muffled_stdout():
+    """临时把进程的 stdout 接到空设备。
+
+    ``videoeditor.dll`` 加载时会往 **stdout** 打一串版本横幅
+    （``V bytenn espresso version`` / ``mobilecv2: 1.8.27``）。那是它自己的
+    printf，不经过 Python 的 ``sys.stdout``，所以只能在 fd 这一层堵。不堵的话
+    ``build --json`` 的 stdout 里会混进这些行，下游按 JSON 解析直接炸。
+    """
+    stream = sys.stdout
+    try:
+        stream.flush()
+    except (AttributeError, ValueError, OSError):
+        pass
+    # 固定堵 fd 1，而不是 ``sys.stdout.fileno()``：DLL 是 printf 到 fd 1 的，
+    # 跟 Python 把 sys.stdout 换成什么对象无关。测试里常把 sys.stdout 换成
+    # StringIO，那种情况下按 sys.stdout 取 fd 会取不到，横幅就漏出去了。
+    fd = 1
+    try:
+        saved = os.dup(fd)
+    except OSError:
+        yield
+        return
+    devnull = os.open(os.devnull, os.O_WRONLY)
+    try:
+        os.dup2(devnull, fd)
+        yield
+    finally:
+        try:
+            stream.flush()
+        except (ValueError, OSError):
+            pass
+        os.dup2(saved, fd)
+        os.close(saved)
+        os.close(devnull)
 
 
 # --------------------------------------------------------------------------- #
@@ -333,6 +371,16 @@ def _probe_dir(install_dir: str) -> bool:
         return ok
 
 
+#: 自检失败时记下"为什么"——让 ``doctor`` / ``why_unavailable`` 能说人话，
+#: 而不是一律说"没有 videoeditor.dll"（11.7 的 dll 明明在，是它自己解不开）。
+_PROBE_NOTE: Optional[str] = None
+
+
+def probe_note() -> str:
+    """上一次 :func:`find_install_dir` 自检失败的原因（没失败就是空串）。"""
+    return _PROBE_NOTE or ""
+
+
 def find_install_dir(install_dir: Optional[str] = None, *,
                      probe: bool = True) -> Optional[str]:
     """找剪映安装目录（含 ``videoeditor.dll`` 且加解密真能用的那个）。
@@ -353,6 +401,7 @@ def find_install_dir(install_dir: Optional[str] = None, *,
             path = os.path.dirname(path)
         return path if os.path.isfile(os.path.join(path, DLL_NAME)) else None
 
+    global _PROBE_NOTE
     usable: List[str] = []
     for cand in iter_install_dirs():
         try:
@@ -361,12 +410,19 @@ def find_install_dir(install_dir: Optional[str] = None, *,
         except OSError:
             continue
     if not usable:
+        _PROBE_NOTE = None
         return None
     if not probe:
+        _PROBE_NOTE = None
         return usable[0]
     for cand in usable:
         if _probe_dir(cand):
+            _PROBE_NOTE = None
             return cand
+    _PROBE_NOTE = (
+        "找到 videoeditor.dll（%s），但它的加密回环自检不通过——这个版本的 DLL "
+        "解不开自己加密的密文（剪映 11.7 已知如此）" % os.path.basename(
+            os.path.dirname(usable[0]) or usable[0]))
     return None
 
 
@@ -437,10 +493,12 @@ class JianyingCrypto:
         self._cookie = k32.AddDllDirectory(self.install_dir)
 
         # DLL 内部会用相对路径加载同目录的依赖，必须先切到安装目录。
+        # 加载期间把它自己的 stdout 横幅堵掉，否则 --json 的 stdout 被污染。
         old_cwd = os.getcwd()
         try:
-            os.chdir(self.install_dir)
-            handle = k32.LoadLibraryExW(dll_path, None, 0x100 | flags)
+            with _muffled_stdout():
+                os.chdir(self.install_dir)
+                handle = k32.LoadLibraryExW(dll_path, None, 0x100 | flags)
         finally:
             os.chdir(old_cwd)
         if not handle:

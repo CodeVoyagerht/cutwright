@@ -82,8 +82,15 @@ class Backend:
         return out_dir
 
     def report(self) -> Dict[str, Any]:
+        """给 ``doctor`` / ``backends`` 看的一行状态。
+
+        可用时 ``reason`` 是**空串**：后端可用，就不该再打印"为什么不可用"，
+        否则会出现"可用：没找到草稿目录"这种自相矛盾的行。
+        """
+        available = self.available()
         return {"name": self.name, "description": self.description,
-                "available": self.available(), "reason": self.why_unavailable()}
+                "available": available,
+                "reason": "" if available else self.why_unavailable()}
 
 
 BACKENDS: Dict[str, type] = {}

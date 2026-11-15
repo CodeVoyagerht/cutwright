@@ -97,9 +97,18 @@ class JianyingBackend(Backend):
         return _crypto.available()
 
     def why_unavailable(self) -> str:
-        return ("未找到剪映草稿目录（用 options['drafts_root'] 或环境变量 "
-                "CUTWRIGHT_JY_DRAFTS 指定），也没有 videoeditor.dll；"
-                "此时只能生成明文草稿，无法加密、无法装进剪映")
+        parts: List[str] = []
+        if not self.drafts_root():
+            parts.append("没找到剪映草稿根目录（用 options['drafts_root'] 或环境变量 "
+                         "CUTWRIGHT_JY_DRAFTS 指定）")
+        if not self.template_dir():
+            parts.append("没有模板目录")
+        note = _crypto.probe_note()
+        if note:
+            parts.append(note)
+        elif not _crypto.available():
+            parts.append("本机没有可用的 videoeditor.dll")
+        return "；".join(parts) + "；此时只能生成明文草稿，无法加密、无法装进剪映"
 
     # -- 构建 -------------------------------------------------------------- #
     def build(self, timeline: Timeline, out_dir: str) -> BuildResult:

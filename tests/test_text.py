@@ -356,3 +356,31 @@ class RenderTextPngTest(TextTestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class KinsokuTest(unittest.TestCase):
+    """折行不能把「，」扔到行首——中文排版里这比字挤一点丑得多。"""
+
+    SENTENCE = "他说这话的时候，眼睛一直看着别处，像是在等谁"
+
+    def test_no_line_starts_with_closing_punctuation(self):
+        for limit in range(4, 16):
+            lines = wrap_text(self.SENTENCE, limit)
+            for line in lines:
+                self.assertNotIn(line[0], "、，。！？：；」』）", (limit, lines))
+
+    def test_no_line_ends_with_opening_punctuation(self):
+        source = "（这一段是引文）后面还有别的字"
+        for limit in range(3, 12):
+            for line in wrap_text(source, limit):
+                self.assertNotIn(line[-1], "（「『", (limit, line))
+
+    def test_overhang_is_bounded(self):
+        # 避头尾允许该行多带字，但要有个上限，不然会一路把标点全吞进来。
+        for limit in range(4, 16):
+            for line in wrap_text(self.SENTENCE, limit):
+                self.assertLessEqual(len(line), limit + 2, (limit, line))
+
+    def test_english_words_are_still_whole(self):
+        lines = wrap_text("hello world again", 8)
+        self.assertEqual(" ".join(lines).split(), "hello world again".split())

@@ -525,6 +525,59 @@ class FFmpegBuildTest(unittest.TestCase):
         self.assertAlmostEqual(info.duration, CLIP_SECONDS * 2, delta=0.5)
         self.assertFalse(result.data["ambient"])
 
+    # -- 配乐太短 ---------------------------------------------------------- #
+    def test_short_music_is_looped_to_cover_the_film(self):
+        """配乐比成片短时不能「放完就静音」——那是用户听得见的漏配。"""
+        music = os.path.join(self.scratch, "short_bgm.mp3")
+        media.run([self.paths.ffmpeg, "-y", "-hide_banner", "-loglevel", "error",
+                   "-f", "lavfi", "-i", "sine=frequency=440:duration=1",
+                   "-b:a", "128k", music])
+        total = CLIP_SECONDS * 3
+        raw = {
+            "name": "loop_case",
+            "canvas": {"width": CANVAS[0], "height": CANVAS[1]},
+            "fps": FPS,
+            "video_segments": [{"file": self.clips[0], "src_start": 0.0,
+                                "src_dur": CLIP_SECONDS} for _ in range(3)],
+            "audio_segments": [{"file": music, "tl_start": 0.0,
+                                "tl_dur": total, "gain_db": 0.0}],
+        }
+        timeline = Timeline.from_shotlist(Shotlist.from_dict(raw))
+        out_dir = os.path.join(self.scratch, "out_loop")
+        result = FFmpegBackend(paths=self.paths,
+                               options={"keep_temp": True}).build(timeline, out_dir)
+        self.assertTrue(result.ok, msg=result.error)
+        self.assertTrue(any("循环" in w for w in result.warnings), result.warnings)
+        # 最后一段不该是静音：把尾巴切成小文件再量平均音量。
+        tail = os.path.join(self.scratch, "loop_tail.mp4")
+        media.run([self.paths.ffmpeg, "-y", "-hide_banner", "-loglevel", "error",
+                   "-ss", "%.3f" % (total - 1.0), "-t", "1.0",
+                   "-i", result.artifacts[0], tail])
+        level = media.mean_volume_db(tail, self.paths)
+        self.assertIsNotNone(level)
+        self.assertGreater(level, -45.0, "配乐循环后尾巴不该是静音（实测 %.1f dB）" % level)
+
+    def test_music_loop_can_be_turned_off(self):
+        music = os.path.join(self.scratch, "short_bgm_off.mp3")
+        media.run([self.paths.ffmpeg, "-y", "-hide_banner", "-loglevel", "error",
+                   "-f", "lavfi", "-i", "sine=frequency=440:duration=1",
+                   "-b:a", "128k", music])
+        raw = {
+            "name": "no_loop", "canvas": {"width": CANVAS[0], "height": CANVAS[1]},
+            "fps": FPS,
+            "video_segments": [{"file": self.clips[0], "src_start": 0.0,
+                                "src_dur": CLIP_SECONDS}],
+            "audio_segments": [{"file": music, "tl_start": 0.0,
+                                "tl_dur": CLIP_SECONDS, "gain_db": 0.0}],
+        }
+        timeline = Timeline.from_shotlist(Shotlist.from_dict(raw))
+        result = FFmpegBackend(paths=self.paths,
+                               options={"keep_temp": True,
+                                        "music_loop": False}).build(
+            timeline, os.path.join(self.scratch, "out_noloop"))
+        self.assertTrue(result.ok, msg=result.error)
+        self.assertFalse(any("循环" in w for w in result.warnings), result.warnings)
+
     # -- 静帧 -------------------------------------------------------------- #
     def _still_png(self, name: str = "still.png") -> str:
         path = os.path.join(self.scratch, name)

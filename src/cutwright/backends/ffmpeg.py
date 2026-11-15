@@ -579,7 +579,9 @@ class FFmpegBackend(Backend):
                 continue
             cmd.extend(["-ss", _f(src_in), "-t", _f(dur), "-i", item.source])
             pad = f"m{index}"
-            audio_graph.append(self._music_graph(index, pad, item, start, dur))
+            need_loop = self._music_needs_loop(item, src_in, dur, warnings)
+            audio_graph.append(self._music_graph(index, pad, item, start, dur,
+                                                 loop=need_loop))
             mix_pads.append(f"[{pad}]")
             index += 1
 
@@ -666,12 +668,38 @@ class FFmpegBackend(Backend):
             parts.append(f"fade=t=out:st={_f(fade_start)}:d={_f(min(fade_out, dur))}:alpha=1")
         return f"[{input_index}:v]{','.join(parts)}[{label}]"
 
+    def _music_needs_loop(self, item: TimelineAudio, src_in: float, dur: float,
+                          warnings: List[str]) -> bool:
+        """配乐比该段短的时候要不要循环。
+
+        不循环的后果不是「音乐短一点」，而是**后半段彻底静音**——`amix` 以环境声
+        长度为准，配乐早没了就是没了，用户听起来像忘了配音。默认循环；
+        ``music_loop=false`` 时只警告不循环，留给知道自己在干什么的人。
+        """
+        if not bool(self.options.get("music_loop", True)):
+            return False
+        try:
+            available = float(media.probe(item.source, self.paths).duration) - src_in
+        except Exception:            # 探不出来就别自作主张，按原样铺
+            return False
+        if available <= 0 or available >= dur - 0.05:
+            return False
+        warnings.append(
+            "配乐只有 %.1fs，要铺 %.1fs：已循环播放（接缝处可能有跳音），"
+            "换更长的曲子更稳妥" % (max(0.0, available), dur))
+        return True
+
     def _music_graph(self, input_index: int, pad: str, item: TimelineAudio,
-                     start: float, dur: float) -> str:
+                     start: float, dur: float, *, loop: bool = False) -> str:
         """配乐：按 gain_db 调音量、裁到该段时间、延迟到 tl_start、末尾淡出。"""
         fade = min(1.0, dur / 3.0)
         delay_ms = max(0, int(round(start * 1000)))
-        chain = [
+        chain: List[str] = []
+        if loop:
+            # aloop 的 size 是样本数，给个足够大的值等于「无限循环」；
+            # 真正的长度由后面的 atrim 决定。
+            chain.append("aloop=loop=-1:size=2147483647")
+        chain += [
             f"volume={_f(float(item.gain_db))}dB",
             f"atrim=0:{_f(dur)}",
             "asetpts=PTS-STARTPTS",

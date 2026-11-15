@@ -213,6 +213,7 @@ def _wrap_styled(chars: Sequence[Tuple[str, str]], max_chars: int) -> List[List[
                     back -= 1
                 if back > 0:
                     cut = back
+            cut = _kinsoku(rest, cut)
             lines.append(_rstrip(rest[:cut]))
             rest = _lstrip(rest[cut:])
 
@@ -451,3 +452,22 @@ def _composite_clipped(image: Image.Image, block: Image.Image, x: int, y: int) -
         return
     crop = block.crop((left - x, top - y, right - x, bottom - y))
     image.alpha_composite(crop, (left, top))
+
+
+# 避头尾（禁则处理）。中文排版的两个硬规矩：一行不能以收尾标点开头，
+# 也不能以起头标点结尾。不处理时最典型的丑就是折行把「，」扔到下一行行首。
+_LINE_HEAD_FORBIDDEN = "、，。！？：；）〕〉》】」』”’…—～!?,.:;)]}"
+_LINE_TAIL_FORBIDDEN = "（〔〈《【「『“‘([{"
+_KINSOKU_OVERHANG = 2
+
+
+def _kinsoku(chars: List[Tuple[str, str]], cut: int) -> int:
+    """把断点挪到标点之外：最多让该行多带两个字，挪不动就原样返回。"""
+    if cut <= 0 or cut >= len(chars):
+        return cut
+    limit = cut + _KINSOKU_OVERHANG
+    while cut < len(chars) and cut < limit and chars[cut][0] in _LINE_HEAD_FORBIDDEN:
+        cut += 1
+    while cut > 1 and chars[cut - 1][0] in _LINE_TAIL_FORBIDDEN:
+        cut -= 1
+    return cut

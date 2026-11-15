@@ -33,6 +33,7 @@ cutwright build shotlist.json -b resolve  --opt grade=lut.cube
 | `cache` | `true` | 切片按内容摘要复用（`_build/seg_<digest>.mp4`） |
 | `preview` | `false` | 快编档：切片 `-crf 30 -preset veryfast`，成片 `26/veryfast` |
 | `keep_temp` | `true` | 保留 `_build/` 中间件（复用靠它） |
+| `music_loop` | `true` | 配乐比该段短时循环铺满；`false` 就只警告、尾巴留静音 |
 | `dry_run` | `false` | 只打印命令不执行 |
 
 **缓存摘要里有什么**：源文件绝对路径 + `mtime:size`、`src_in`、`src_dur`、`speed`、

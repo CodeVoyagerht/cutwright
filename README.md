@@ -30,6 +30,12 @@ cutwright build    shotlist.json --backend ffmpeg -o out
 `build` 结束时会自动体检成片（时长 / 分辨率 / 音轨 / 黑场 / 长静音），
 **不以「跑完了」为成功，以「实测数字对得上」为成功**。
 
+![三条产线渲染出的三帧：标题卡 / 关键词换色的字幕 / 透出画面的画框叠加](docs/images/demo-frames.png)
+
+上面三帧来自仓库自带的 demo（`examples/demo`，素材全部用 ffmpeg lavfi 现造）：
+左是 `title` 卡，中是关键词换色（`"自动裁剪｜变速｜补增益"`，分隔符本身不印出来），
+右是 `image_overlays` 的竖屏画框——它的 alpha 是真的，画面从框里透出来。
+
 ## 三条产线
 
 | 后端 | 产物 | 需要什么 | 适合谁 |
@@ -155,11 +161,27 @@ python skills/cutwright/scripts/install.py --target all
 python -m unittest discover -s tests -t .
 ```
 
-29 个用例，零依赖，`git clone` 完就能跑。真渲染的用例会检测 ffmpeg，没有就 skip
+153 个用例，零依赖，`git clone` 完就能跑。真渲染的用例会检测 ffmpeg，没有就 skip
 而不是 fail——CI 上的 `windows-latest` 有 ffmpeg，本地没装的开发者也不该被卡住。
 
 契约测试（`tests/test_cli_contract.py`）锁死的是**机器可读的部分**：`--json` 的字段、
 退出码、stderr 与 stdout 的分工。这些一旦漂移，最先坏的是别人的自动化。
+
+### 目视也要过一遍
+
+单测抓不到「字排歪了」「画框是个黑窟窿」这类问题——那得看像素。所以仓库里有一条
+真渲染的验收链，`docs/images/demo-frames.png` 就是它的产物：
+
+```bash
+python examples/demo/make_media.py --out examples/demo/materials   # 现造素材（含合成的 bgm）
+cutwright validate examples/demo/shotlist.json --check-files        # 0 错误 0 警告
+cutwright build    examples/demo/shotlist.json -o examples/demo/out # 13.8s 成片
+cutwright qc       examples/demo/shotlist.json --mp4 examples/demo/out/demo-reel.mp4
+```
+
+`qc` 的 20 项全部要 `OK` 才算过：镜数对得上、首帧从 0 开始、无空档无重叠、变速后在范围内、
+字幕都在片长内、旁白不可见、叠加层有效、音轨存在、时长偏差 <0.25s、分辨率一致、
+没有超过阈值的黑场与静音。这条链在 CI 的 `render` job 里也会跑，产物作为 artifact 上传。
 
 ## 已知边界
 

@@ -107,10 +107,13 @@ class ScreenplayParseTest(unittest.TestCase):
         self.assertTrue(sp.base_dir.endswith(os.path.join("examples", "story")))
 
     def test_resolve_vo_uses_base_dir(self):
+        # 用 os.path.join 拼期望值：这条测的是「相对 base_dir + vo_dir」，
+        # 不是「Windows 分隔符长什么样」，别在 Linux 上红。
         sp = make_screenplay(vo_dir="vo")
-        sp.base_dir = r"C:\drama"
+        sp.base_dir = os.path.join(os.sep, "drama")
         line = sp_mod.Line(text="一", vocal="a.wav")
-        self.assertEqual(sp.resolve_vo(line.vocal), os.path.normpath(r"C:\drama\vo\a.wav"))
+        self.assertEqual(sp.resolve_vo(line.vocal),
+                         os.path.normpath(os.path.join(sp.base_dir, "vo", "a.wav")))
 
 
 class ScreenplayValidateTest(unittest.TestCase):
@@ -184,9 +187,11 @@ class MaterialIndexTest(unittest.TestCase):
         self.assertEqual(tags, ["s01", "subway", "night", "close"])
 
     def test_from_dict_resolves_relative_to_json_dir(self):
+        base = os.path.join(os.sep, "proj")
         index = story.MaterialIndex.from_dict(
-            {"pieces": [{"file": "m/a.mp4", "dur": 2.0}]}, base_dir=r"C:\proj")
-        self.assertEqual(index.pieces[0].file, os.path.normpath(r"C:\proj\m\a.mp4"))
+            {"pieces": [{"file": "m/a.mp4", "dur": 2.0}]}, base_dir=base)
+        self.assertEqual(index.pieces[0].file,
+                         os.path.normpath(os.path.join(base, "m", "a.mp4")))
 
     def test_round_trip(self):
         index = make_index()

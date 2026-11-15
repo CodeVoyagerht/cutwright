@@ -141,7 +141,11 @@ def _tokens_from_filename(path: str) -> List[str]:
 
     去掉拖尾的 ``take2``/``001`` 这类序号——它们对挑镜头没有信息量。
     """
-    stem = os.path.splitext(os.path.basename(path))[0]
+    # 两种分隔符都当分隔符：索引可能在 Windows 上建、在 Linux 上读，
+    # 反过来也一样，别让 `C:\x\S01_night.mp4` 在那台机器上变成一个长标签。
+    text = str(path).replace("\\", "/")
+    name = text.rstrip("/").rsplit("/", 1)[-1]
+    stem = os.path.splitext(name)[0]
     raw = []
     token = ""
     for ch in stem:

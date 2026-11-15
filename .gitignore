@@ -63,3 +63,9 @@ examples/story/materials/
 examples/story/materials.json
 examples/story/shotlist.json
 examples/story/out/
+
+# 压测集：素材与产物都是现造的（make_episode.py 一条命令重建）
+examples/stress_long/materials/
+examples/stress_long/materials.json
+examples/stress_long/shotlist.json
+examples/stress_long/out/

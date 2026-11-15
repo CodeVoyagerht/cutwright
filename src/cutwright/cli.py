@@ -558,6 +558,12 @@ def cmd_story(args: argparse.Namespace) -> int:
         print(f"    ……另有 {len(report.per_scene) - 12} 场")
     print(f"  字幕 {len(shotlist.text_segments)} 条  旁白 {len(shotlist.vo_segments)} 段  "
           f"音频 {len(shotlist.audio_segments)} 条")
+    if report.reuse:
+        worst = next(iter(report.reuse.items()))
+        top = ", ".join(f"{name}×{n}" for name, n in report.reuse.items())
+        print(f"  素材复用 {len(index.pieces)} 段撑 {report.shots} 镜（最多 {worst[1]} 次）: {top}")
+        if worst[1] >= 6:
+            print("    同一段素材用 6 次以上，观众会认出来；补拍几段本场素材再排一次更耐看。")
     for warning in report.warnings[:8]:
         _err(f"注意: {warning}")
     if len(report.warnings) > 8:

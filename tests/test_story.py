@@ -297,6 +297,39 @@ class BuildShotlistTest(unittest.TestCase):
             clock += seg.tl_dur
         self.assertAlmostEqual(sl.video_duration(), clock, places=3)
 
+    def test_long_line_caption_covers_all_its_shots(self):
+        """长台词会被拆成 2 镜，字幕必须从**第一镜**开始。
+
+        这条是压测逼出来的：字幕原先锚在最后一镜上，于是它压到下一句头上，
+        屏幕上同时挂两行字（实测重叠 2.1s）。
+        """
+        sp = sp_mod.Screenplay(
+            name="长句", canvas=sp_mod.Canvas(1080, 1920), fps=30.0,
+            material_dir="m",
+            scenes=[sp_mod.Scene(id="S1", tags=["subway", "night"], lines=[
+                sp_mod.Line(text="这一句特意写得足够长，长到一镜放不下必须拆成两镜" * 2),
+                sp_mod.Line(text="短句"),
+            ])],
+        )
+        sl, report = story.build_shotlist(sp, make_index(), story.StoryOptions())
+        self.assertGreaterEqual(len(sl.video_segments), 2, "长句应当被拆成多镜")
+        first, second = sl.text_segments[0], sl.text_segments[1]
+        line_shots = [v for v in sl.video_segments if v.tl_start < second.tl_start]
+        self.assertGreaterEqual(len(line_shots), 2)
+        self.assertAlmostEqual(first.tl_start, line_shots[0].tl_start, places=3)
+        covered = sum(v.tl_dur for v in line_shots)
+        self.assertAlmostEqual(first.tl_dur, covered, places=3)
+        self.assertLessEqual(first.tl_start + first.tl_dur,
+                             second.tl_start + 1e-3,
+                             "字幕不能压到下一句上")
+
+    def test_report_counts_reuse(self):
+        sl, report, _ = self.build()
+        self.assertEqual(sum(report.reuse.values()), len(sl.video_segments))
+        counts = list(report.reuse.values())
+        self.assertEqual(counts, sorted(counts, reverse=True))
+        self.assertLessEqual(len(report.reuse), 5)
+
     def test_frame_grid_is_respected(self):
         sl, _, _ = self.build()
         for seg in sl.video_segments:

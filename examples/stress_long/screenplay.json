@@ -1,0 +1,382 @@
+{
+  "name": "长夜名单 第1集",
+  "canvas": {
+    "width": 1080,
+    "height": 1920
+  },
+  "fps": 30,
+  "material_dir": "materials",
+  "vo_dir": "materials",
+  "cast": {
+    "lin": "林岚",
+    "zhou": "周野",
+    "chen": "陈叔",
+    "tom": "汤姆",
+    "xu": "徐医生"
+  },
+  "music": {
+    "file": "materials/bgm.mp3",
+    "gain_db": -22
+  },
+  "scenes": [
+    {
+      "id": "S01",
+      "tags": [
+        "rooftop",
+        "dawn"
+      ],
+      "lines": [
+        {
+          "type": "dialogue",
+          "who": "action",
+          "text": "天刚亮，楼顶的水塔还在滴水"
+        },
+        {
+          "type": "dialogue",
+          "who": "lin",
+          "text": "你昨晚没回家"
+        },
+        {
+          "type": "dialogue",
+          "who": "zhou",
+          "text": "回家了，只是没进屋"
+        },
+        {
+          "type": "dialogue",
+          "who": "lin",
+          "text": "周野，那份名单我看过了"
+        },
+        {
+          "type": "voiceover",
+          "who": "zhou",
+          "text": "她说话的时候，手一直按在栏杆上"
+        },
+        {
+          "type": "dialogue",
+          "who": "zhou",
+          "text": "所以呢，你也觉得我该停"
+        },
+        {
+          "type": "dialogue",
+          "who": "lin",
+          "text": "我觉得你该先睡一觉，再决定要不要停"
+        },
+        {
+          "type": "dialogue",
+          "who": "action",
+          "text": "风把她的外套吹起来，又落回去"
+        },
+        {
+          "type": "dialogue",
+          "who": "zhou",
+          "text": "名单上第三个人，是我爸的老同事"
+        },
+        {
+          "type": "dialogue",
+          "who": "lin",
+          "text": "我知道，我看名字就认出来了"
+        }
+      ]
+    },
+    {
+      "id": "S02",
+      "tags": [
+        "street",
+        "day"
+      ],
+      "lines": [
+        {
+          "type": "dialogue",
+          "who": "action",
+          "text": "早高峰，人行道挤得像传送带"
+        },
+        {
+          "type": "dialogue",
+          "who": "zhou",
+          "text": "陈叔以前每周三都来这儿吃面"
+        },
+        {
+          "type": "dialogue",
+          "who": "lin",
+          "text": "那今天正好是周三"
+        },
+        {
+          "type": "dialogue",
+          "who": "zhou",
+          "text": "对，所以我在这儿站了四十分钟"
+        },
+        {
+          "type": "dialogue",
+          "who": "chen",
+          "text": "你们两个，跟我来后厨"
+        },
+        {
+          "type": "dialogue",
+          "who": "action",
+          "text": "面馆后厨的抽油烟机响得像下雨"
+        },
+        {
+          "type": "dialogue",
+          "who": "chen",
+          "text": "名单不是我给的，是有人塞进我店里的"
+        },
+        {
+          "type": "dialogue",
+          "who": "lin",
+          "text": "塞进来的时候，你有没有看见人"
+        },
+        {
+          "type": "dialogue",
+          "who": "chen",
+          "text": "看见一个背影，戴着医院的手环"
+        },
+        {
+          "type": "voiceover",
+          "who": "zhou",
+          "text": "医院。徐医生。这两个词在我脑子里撞了一下"
+        }
+      ]
+    },
+    {
+      "id": "S03",
+      "tags": [
+        "office",
+        "night"
+      ],
+      "lines": [
+        {
+          "type": "dialogue",
+          "who": "action",
+          "text": "办公室只亮着半排灯"
+        },
+        {
+          "type": "dialogue",
+          "who": "lin",
+          "text": "徐医生的排班表，我在系统里查到了"
+        },
+        {
+          "type": "dialogue",
+          "who": "zhou",
+          "text": "她三号那晚不在医院"
+        },
+        {
+          "type": "dialogue",
+          "who": "lin",
+          "text": "可手环是她的编号"
+        },
+        {
+          "type": "dialogue",
+          "who": "tom",
+          "text": "有人在借用她的身份"
+        },
+        {
+          "type": "dialogue",
+          "who": "zhou",
+          "text": "汤姆，你为什么这么肯定"
+        },
+        {
+          "type": "dialogue",
+          "who": "tom",
+          "text": "因为我干过同样的事，五年前"
+        },
+        {
+          "type": "dialogue",
+          "who": "action",
+          "text": "窗外的霓虹闪了一下，随后安静"
+        },
+        {
+          "type": "dialogue",
+          "who": "lin",
+          "text": "那五年前那件事，最后怎么收的"
+        },
+        {
+          "type": "dialogue",
+          "who": "tom",
+          "text": "没收。所以现在还站在你们面前"
+        }
+      ]
+    },
+    {
+      "id": "S04",
+      "tags": [
+        "alley",
+        "rain"
+      ],
+      "lines": [
+        {
+          "type": "dialogue",
+          "who": "action",
+          "text": "雨下大了，巷子里没有人"
+        },
+        {
+          "type": "dialogue",
+          "who": "zhou",
+          "text": "他知道我们会来"
+        },
+        {
+          "type": "dialogue",
+          "who": "lin",
+          "text": "他留了张纸条"
+        },
+        {
+          "type": "voiceover",
+          "who": "zhou",
+          "text": "纸上只有四个字：别查下去"
+        },
+        {
+          "type": "dialogue",
+          "who": "lin",
+          "text": "你怎么想"
+        },
+        {
+          "type": "dialogue",
+          "who": "zhou",
+          "text": "我想知道他是谁"
+        },
+        {
+          "type": "dialogue",
+          "who": "lin",
+          "text": "我更想知道他为什么怕"
+        },
+        {
+          "type": "dialogue",
+          "who": "action",
+          "text": "雨水顺着铁皮棚淌成一条线"
+        },
+        {
+          "type": "dialogue",
+          "who": "zhou",
+          "text": "怕，说明还活着"
+        },
+        {
+          "type": "dialogue",
+          "who": "lin",
+          "text": "活着，就还有下一次"
+        }
+      ]
+    },
+    {
+      "id": "S05",
+      "tags": [
+        "hospital",
+        "dawn"
+      ],
+      "lines": [
+        {
+          "type": "dialogue",
+          "who": "action",
+          "text": "急诊楼的灯到天亮也没灭"
+        },
+        {
+          "type": "dialogue",
+          "who": "xu",
+          "text": "你们找我，是为了编号 0731 的手环"
+        },
+        {
+          "type": "dialogue",
+          "who": "lin",
+          "text": "看来您已经知道了"
+        },
+        {
+          "type": "dialogue",
+          "who": "xu",
+          "text": "三天前有人来借过，我没同意"
+        },
+        {
+          "type": "dialogue",
+          "who": "zhou",
+          "text": "那个人长什么样"
+        },
+        {
+          "type": "dialogue",
+          "who": "xu",
+          "text": "个子不高，右手小指少一截"
+        },
+        {
+          "type": "dialogue",
+          "who": "action",
+          "text": "林岚的手指在病历夹上停住"
+        },
+        {
+          "type": "dialogue",
+          "who": "lin",
+          "text": "陈叔，那个背影是不是也少一指"
+        },
+        {
+          "type": "dialogue",
+          "who": "action",
+          "text": "陈叔没说话，只是把烟按灭了"
+        },
+        {
+          "type": "voiceover",
+          "who": "zhou",
+          "text": "有些答案不用说出口"
+        }
+      ]
+    },
+    {
+      "id": "S06",
+      "tags": [
+        "seaside",
+        "dusk"
+      ],
+      "lines": [
+        {
+          "type": "dialogue",
+          "who": "action",
+          "text": "傍晚的海边，退潮退到很远"
+        },
+        {
+          "type": "dialogue",
+          "who": "zhou",
+          "text": "名单还剩两个人"
+        },
+        {
+          "type": "dialogue",
+          "who": "lin",
+          "text": "我们已经查到第三个了"
+        },
+        {
+          "type": "dialogue",
+          "who": "zhou",
+          "text": "所以还剩两个"
+        },
+        {
+          "type": "dialogue",
+          "who": "lin",
+          "text": "不，是还剩两个愿意说话的"
+        },
+        {
+          "type": "dialogue",
+          "who": "action",
+          "text": "海风把纸吹得哗哗响"
+        },
+        {
+          "type": "dialogue",
+          "who": "zhou",
+          "text": "林岚，如果最后一个是她呢"
+        },
+        {
+          "type": "dialogue",
+          "who": "lin",
+          "text": "那也得查"
+        },
+        {
+          "type": "dialogue",
+          "who": "zhou",
+          "text": "好，那我陪你查到最后"
+        },
+        {
+          "type": "dialogue",
+          "who": "action",
+          "text": "两串脚印并排走向涨潮的地方"
+        },
+        {
+          "type": "voiceover",
+          "who": "zhou",
+          "text": "天黑了，但海岸线还看得见"
+        }
+      ]
+    }
+  ]
+}

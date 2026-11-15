@@ -149,7 +149,35 @@ OK (skipped=2)
 两个 skip 是「本机有剪映 DLL」时才会跑的真实草稿回读用例。
 全项目零第三方依赖，测试只依赖标准库（`render` / `beats` 两个 extra 是可选的）。
 
-## 9. 换台机器会怎样
+## 9. 长剧本压测（66 镜 / 2:37）
+
+短例子（3 场 8 句）证明不了排片在长剧本上还站得住，所以另造一集：
+`examples/stress_long/`，6 场 61 句、5 个演员、14 段素材（比镜头数少得多，逼着它复用）。
+
+```
+python examples/stress_long/make_episode.py
+cutwright index examples/stress_long/materials -o materials.json   → 14 个镜头
+cutwright story examples/stress_long/screenplay.json --index materials.json -o shotlist.json
+  → 6 场 / 61 句 → 66 镜 / 2:37.67（S01 12 镜 S02 12 S03 10 S04 10 S05 11 S06 11）
+  字幕 56 条  旁白 5 段  音频 1 条
+  素材复用 14 段撑 66 镜（最多 7 次）
+cutwright validate shotlist.json --check-files → 0 个错误，0 个警告
+cutwright build shotlist.json -o out --opt jobs=4 → 157.7s，成片体检 8 项全 OK
+cutwright qc shotlist.json --mp4 "out\长夜名单 第1集.mp4" → 20 项全过
+```
+
+自检指标：66 镜 / 14 段 = 平均每段用 4.7 次，相邻同源 0 次，镜长 1.00–3.60s（均值 2.39），
+时间线断点 0，字幕与旁白都落在画面内。
+
+**压测逼出来的问题（已修）**：长台词被拆成 2 镜时，字幕原先锚在**最后一镜**上，
+于是它压到下一句头上——屏幕上同时挂两行字，实测重叠 2.10s（3 处）。
+现在字幕锚在这一句的第一镜、时长覆盖它占的**所有**镜。这条只有多镜长句才暴露，
+8 句的短例子碰不到。
+
+顺带补了「素材复用」报告：`story` 现在会说出「14 段撑 66 镜（最多 7 次）」，
+6 次以上就提示补拍。素材数是硬上限，`镜头数 ÷ 素材数` 低于 4 才比较耐看。
+
+## 10. 换台机器会怎样
 
 - ffmpeg 自动发现找不到时，`doctor` 会说清楚缺什么，`build` 不会半途炸；
 - 剪映那条线需要 Windows + 剪映 11.6 的 `videoeditor.dll`，别的平台会明确报不可用；

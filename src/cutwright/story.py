@@ -207,6 +207,9 @@ class StoryReport:
     per_scene: List[Dict[str, Any]] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
     unresolved: List[str] = field(default_factory=list)
+    # 素材复用：{文件名: 用了几次}，按次数降序、最多 5 条。
+    # 素材数远少于镜头数时，真正决定观感的就是这张表——7 次和 2 次看着不一样。
+    reuse: Dict[str, int] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -218,6 +221,7 @@ class StoryReport:
             "per_scene": self.per_scene,
             "warnings": self.warnings,
             "unresolved": self.unresolved,
+            "reuse": self.reuse,
         }
 
     def summary(self) -> str:
@@ -262,7 +266,8 @@ def build_shotlist(screenplay: Any, index: MaterialIndex,
             line_frames = max(1, int(round(seconds * fps)))
             chunks = _allocate_frames(line_frames, options, fps)
 
-            placed = 0
+            placed = 0          # 帧数，用来判断这句到底排上没有
+            placed_shots = 0    # 镜数，用来回看「这句占用了哪几镜」
             for chunk in chunks:
                 shot_seconds = chunk / fps
                 piece, speed = _pick_piece(index, scene, line, shot_seconds,
@@ -298,18 +303,21 @@ def build_shotlist(screenplay: Any, index: MaterialIndex,
                 clock = round(clock + src_dur / speed_used, 6)
                 frame += chunk
                 placed += chunk
+                placed_shots += 1
 
             if placed == 0:              # 一句都没排上（没素材）
                 frame += line_frames
                 continue
+            # 这一句占了几镜就回看几镜——长台词会被拆成 2–3 镜，
+            # 字幕必须从**第一镜**开始，否则它会压到下一句上（实测重叠过 2.1s）。
+            line_videos = videos[-placed_shots:]
+            line_start = line_videos[0].tl_start
+            line_dur = round(sum(v.src_dur / (v.speed or 1.0)
+                                for v in line_videos), 4)
 
             spoken = line.text
             if options.speaker_prefix and line.who and line.type == "dialogue":
                 spoken = f"{screenplay.speaker_name(line.who)}：{line.text}"
-
-            line_start = videos[-1].tl_start if videos else 0.0
-            line_dur = round(sum(v.src_dur / (v.speed or 1.0)
-                                for v in videos[-len(chunks):]), 4) if videos else seconds
 
             if options.captions and line.speaks and spoken:
                 texts.append(TextSegment(
@@ -344,6 +352,11 @@ def build_shotlist(screenplay: Any, index: MaterialIndex,
         })
 
     total = frame / fps
+    counts: Dict[str, int] = {}
+    for item in videos:
+        key = os.path.basename(item.file)
+        counts[key] = counts.get(key, 0) + 1
+    report.reuse = dict(sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[:5])
     music = _music(screenplay, options, total, report)
     if music is not None:
         audios.append(music)

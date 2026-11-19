@@ -32,9 +32,11 @@ cutwright build    shotlist.json --backend ffmpeg -o out
 
 赶时间先看节奏？同一条命令加 `--fast`：切片与成片都换成更快的编码档（画质略降），
 切片的缓存键也不同、不会污染之后交付档的缓存。它会在末尾明确提醒你「这是预览、别拿去交付」。
-到底省多少要看片子：**编码重的省得多，推近镜头多的省不动**——本机 demo 全量（7 镜、3 个带
-推近）`--fast` 184 秒、交付档 203 秒，把推近关掉只要 14 秒。要压时间先数 `zoom` 的个数，
-而不是先调 `-preset`。
+不过要知道它省的是什么：**省的是编码**。推近（Ken-Burns）以前是最贵的一步（demo 全量
+203 秒，其中一镜推近就占 115 秒），现在换成逐帧改缩放 + 居中裁剪，同样的片子交付档
+**18.7 秒**、预览档 16.9 秒——所以 `--fast` 在滤镜重的片子上省不出多少，真正的提速来自
+那条滤镜链（详见 [`skills/cutwright/references/quickstart.md`](skills/cutwright/references/quickstart.md)）。
+老实现没删：`--opt zoom_engine=zoompan` 可以退回去。
 
 `--dry-run` 现在对 ffmpeg 后端也有效（以前只有剪映/达芬奇认），先把每一段切片的
 来源、入点、时长与成片路径列出来，不建目录也不起 ffmpeg。

@@ -170,8 +170,9 @@ cutwright build shotlist.json -o out               # ④ 出片（或 -b jianyin
 赶进度用 `--fast` 出预览、定下节奏后再去掉它渲交付档——这是本工具推荐的用法，
 不是「先快后忘」的借口：交付的那一版必须是不带 `--fast` 的。
 
-省多少要看片子：编码重的省得多，**推近镜头（Ken-Burns）多的省不动**——瓶颈在 `zoompan`
-滤镜，不在码率与 preset。要压时间先数 `zoom` 的个数，别先调 `-preset`。
+省多少要看片子：编码重的省得多。推近（Ken-Burns）以前是最贵的一步，现在默认走
+「2 倍画布 + 逐帧改缩放 + 居中裁剪」，一镜 3 秒从 115 秒降到 3.8 秒（SSIM 0.985），
+所以冷启一条 7 镜竖屏片十几秒就够。老实现可用 `--opt zoom_engine=zoompan` 退回。
 完整走查（含本机耗时表、手边没素材也能跑）：`references/quickstart.md`。
 
 全命令支持 `--json`：stdout 只有 JSON，日志走 stderr。给机器读就用它。

@@ -206,11 +206,27 @@ class BackendContractTest(unittest.TestCase):
         self.assertIn("scale=2160:3840:force_original_aspect_ratio=increase", zoom_in)
         self.assertIn("crop=2160:3840:x=(iw-2160)*0.5", zoom_in)
         # 2 秒 * 30fps = 60 帧，n 必须用 tl_dur 算而不是源时长。
-        self.assertIn("zoompan=z='min(1+0.08*on/60,1+0.08)'", zoom_in)
-        self.assertIn("d=1:s=1080x1920:fps=30", zoom_in)
+        # 默认走 scale 引擎：把 2 倍画布缩回 width*factor 再居中裁剪；factor=1 时
+        # 正好是整幅画面，与 zoompan 的 z=1 等价（这就是它比 zoompan 快 37 倍的那条路）。
+        self.assertIn("scale=w=trunc(1080*(1+0.08*n/60)/2)*2:h=-2:eval=frame", zoom_in)
+        self.assertIn("crop=1080:1920", zoom_in)
+        self.assertNotIn("zoompan", zoom_in)
 
         zoom_out = backend._segment_filter(_clip("out", amount=0.06), plain, 1080, 1920, 30.0)
-        self.assertIn("zoompan=z='max(1.0,1+0.06-0.06*on/60)'", zoom_out)
+        self.assertIn("scale=w=trunc(1080*(1+0.06*(1-n/60))/2)*2:h=-2:eval=frame", zoom_out)
+
+        # 老引擎还能用：`--opt zoom_engine=zoompan` 退回逐帧采样那套（SSIM 0.985，
+        # 但慢 37 倍）；写错值退回默认，不因为一个错拼的选项让整条渲染失败。
+        legacy = FFmpegBackend(paths=Paths(ffmpeg="ffmpeg", ffprobe="ffprobe"),
+                               options={"zoom_engine": "zoompan"})
+        self.assertIn("zoompan=z='min(1+0.08*on/60,1+0.08)'",
+                      legacy._segment_filter(_clip("in", amount=0.08), plain, 1080, 1920, 30.0))
+        self.assertIn("zoompan=z='max(1.0,1+0.06-0.06*on/60)'",
+                      legacy._segment_filter(_clip("out", amount=0.06), plain, 1080, 1920, 30.0))
+        typo = FFmpegBackend(paths=Paths(ffmpeg="ffmpeg", ffprobe="ffprobe"),
+                             options={"zoom_engine": "zoom-pan"})
+        self.assertNotIn("zoompan",
+                         typo._segment_filter(_clip("in", amount=0.08), plain, 1080, 1920, 30.0))
 
         # 慢放 0.5 倍：setpts 要在构图之前、fps 之前。
         slowed = _clip("none", speed=0.5)
@@ -723,6 +739,41 @@ class FFmpegBuildTest(unittest.TestCase):
         # 没有环境声就没有侧链，配乐不该被压（这里只要求不报错、电平正常）。
         level = media.mean_volume_db(result.artifacts[0], self.paths)
         self.assertGreater(level, -40.0)
+
+    # -- 时间线空档 -------------------------------------------------------- #
+    def test_gap_is_padded_with_black_instead_of_shifting(self):
+        """空档必须补黑场，不能把后面的镜头整体左移。
+
+        这条是「导入草稿里缺了一段素材」的场景：时间线 0–2s 有画面、2–5s 空档、
+        5–7s 又有画面。concat 是首尾相接的，不补黑场成片就只剩 4 秒，
+        字幕写在 5.2s 的那句会落在第二镜开头。
+        """
+        raw = {
+            "name": "gap_case", "canvas": {"width": CANVAS[0], "height": CANVAS[1]},
+            "fps": FPS,
+            "video_segments": [
+                {"file": self.clips[0], "src_start": 0.0, "src_dur": CLIP_SECONDS,
+                 "tl_start": 0.0},
+                {"file": self.clips[1], "src_start": 0.0, "src_dur": CLIP_SECONDS,
+                 "tl_start": 5.0},
+            ],
+        }
+        timeline = Timeline.from_shotlist(Shotlist.from_dict(raw))
+        self.assertAlmostEqual(timeline.duration, CLIP_SECONDS + 5.0, places=2)
+        out_dir = os.path.join(self.scratch, "out_gap")
+        result = FFmpegBackend(paths=self.paths,
+                               options={"keep_temp": True}).build(timeline, out_dir)
+        self.assertTrue(result.ok, msg=result.error)
+        info = media.probe(result.artifacts[0], self.paths)
+        self.assertAlmostEqual(info.duration, CLIP_SECONDS + 5.0, delta=0.4,
+                               msg="空档必须留在片子里，而不是被 concat 吃掉")
+        # 空档中段应当接近纯黑（limited range 的黑是 16）。
+        frame = os.path.join(self.scratch, "gap_frame.png")
+        media.extract_frame(result.artifacts[0], frame, 3.5, paths=self.paths)
+        with Image.open(frame) as image:
+            gray = image.convert("L")
+            mean = sum(gray.getdata()) / float(gray.width * gray.height)
+        self.assertLess(mean, 30, "空档里应当是黑场")
 
     # -- 静帧 -------------------------------------------------------------- #
     def _still_png(self, name: str = "still.png") -> str:

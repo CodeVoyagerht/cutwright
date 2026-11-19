@@ -59,6 +59,8 @@ cutwright build shotlist.json -b resolve  --opt grade=lut.cube
    `amix` 混配乐（原声 0.9 / 配乐 0.30 / `normalize=0`），片头 0.12s 淡入、
    片尾 0.35s 淡出，最后 `-crf 18 -movflags +faststart`。
    时间线上有空档（`tl_start` 与上一镜不接）时先插一段同长黑场再 concat——concat 会把片段首尾相接，不补就会让后面的镜头整体左移。
+   重叠的镜头则直接拒绝（加 `--force` 也不行）：concat 只能首尾相接，压住的画面表达不出来，
+   硬渲只会让后一镜的起点错位。
 
 ## 剪映后端（11.x）
 

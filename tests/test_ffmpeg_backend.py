@@ -741,6 +741,30 @@ class FFmpegBuildTest(unittest.TestCase):
         self.assertGreater(level, -40.0)
 
     # -- 时间线空档 -------------------------------------------------------- #
+    def test_overlapping_timeline_is_refused(self):
+        """重叠不是「加 --force 就能渲」：concat 只能首尾相接，压住的画面表达不出来。
+
+        以前它会悄悄出一版：第二镜被接到第一镜后面，`-t 总长` 再把尾巴切掉，
+        于是「从 1.0s 开始」变成了「从 2.0s 开始」，而且 `duration_match` 也查不出来。
+        """
+        raw = {
+            "name": "overlap", "canvas": {"width": CANVAS[0], "height": CANVAS[1]},
+            "fps": FPS,
+            "video_segments": [
+                {"file": self.clips[0], "src_start": 0.0, "src_dur": CLIP_SECONDS,
+                 "tl_start": 0.0},
+                {"file": self.clips[1], "src_start": 0.0, "src_dur": CLIP_SECONDS,
+                 "tl_start": CLIP_SECONDS / 2},
+            ],
+        }
+        timeline = Timeline.from_shotlist(Shotlist.from_dict(raw))
+        result = FFmpegBackend(paths=self.paths,
+                               options={"keep_temp": True}).build(
+            timeline, os.path.join(self.scratch, "out_overlap"))
+        self.assertFalse(result.ok)
+        self.assertIn("重叠", result.error or "")
+        self.assertIn("concat", result.error or "")
+
     def test_gap_is_padded_with_black_instead_of_shifting(self):
         """空档必须补黑场，不能把后面的镜头整体左移。
 

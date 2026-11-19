@@ -63,7 +63,8 @@ cutwright build    work/shotlist.json -b ffmpeg -o work/out   # ⑥ 出片 + 自
 ```
 
 第 ⑥ 步结尾会自动打印成片体检结果。**任何一项 FAIL 都要处理或如实报告**，
-尤其是 `duration_match`（时长漂移）和 `no_long_black`（黑场）。
+尤其是 `duration_match`（时长漂移）、`av_duration_match`（画面与声音不等长，
+通常意味着某段切片坏了）和 `no_long_black`（黑场）。
 
 ## 工作流 B：剪映草稿
 

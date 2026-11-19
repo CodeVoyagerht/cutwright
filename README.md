@@ -27,7 +27,7 @@ cutwright plan     shotlist.json --target 45
 cutwright build    shotlist.json --backend ffmpeg -o out
 ```
 
-`build` 结束时会自动体检成片（时长 / 分辨率 / 音轨 / 黑场 / 长静音），
+`build` 结束时会自动体检成片（时长 / 分辨率 / 音轨 / **音视频等长** / 黑场 / 长静音），
 **不以「跑完了」为成功，以「实测数字对得上」为成功**。
 
 赶时间先看节奏？同一条命令加 `--fast`：切片与成片都换成更快的编码档（画质略降），

@@ -251,6 +251,21 @@ def check_render(mp4: str, *, expect_duration: Optional[float] = None,
                f"{info.width}x{info.height} @ {info.fps:.3f}fps, "
                f"{info.duration:.3f}s, {info.pix_fmt}")
 
+    # --- 音视频是否一样长 ---
+    # 容器时长取的是最长那条流：视频少 0.6 秒、音轨仍是全长时，上面的 6.000s
+    # 依旧成立，画面却在某一镜之后早早结束。两条流各自的时长必须单独比一遍。
+    if info.has_audio and info.video_duration and info.audio_duration:
+        drift = info.video_duration - info.audio_duration
+        ok = abs(drift) <= duration_tolerance
+        report.add("av_duration_match", ok,
+                   f"视频 {info.video_duration:.3f}s vs 音轨 {info.audio_duration:.3f}s "
+                   f"（差 {drift:+.3f}s，容差 ±{duration_tolerance:.2f}s）")
+        if not ok:
+            report.issues.append(Issue(
+                "error", "Q102",
+                f"音视频不等长（画面比声音{'短' if drift < 0 else '长'} "
+                f"{abs(drift):.3f}s）—— 多半是某段切片坏了或被跳过"))
+
     # --- 时长 ---
     if expect_duration is not None:
         drift = info.duration - expect_duration

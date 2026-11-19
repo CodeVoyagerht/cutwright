@@ -67,6 +67,10 @@ class MediaInfo:
     has_video: bool = False
     has_audio: bool = False
     size: int = 0
+    # 容器时长（``format.duration``）是「最长那条流」；音视频不同步时它看不出来，
+    # 所以两条流各自的时长单独留一份，体检才有得比。
+    video_duration: float = 0.0
+    audio_duration: float = 0.0
 
     @property
     def is_hdr(self) -> bool:
@@ -86,6 +90,8 @@ class MediaInfo:
             "hdr": self.is_hdr, "color_range": self.color_range,
             "has_video": self.has_video, "has_audio": self.has_audio,
             "size": self.size,
+            "video_duration": round(self.video_duration, 3),
+            "audio_duration": round(self.audio_duration, 3),
         }
 
 
@@ -163,10 +169,12 @@ def probe(path: str, paths: Optional[config.Paths] = None,
             info.pix_fmt = stream.get("pix_fmt") or ""
             info.color_transfer = stream.get("color_transfer") or ""
             info.color_range = stream.get("color_range") or ""
+            info.video_duration = _num(stream.get("duration"))
             if not info.duration:
-                info.duration = _num(stream.get("duration"))
+                info.duration = info.video_duration
         elif kind == "audio":
             info.has_audio = True
+            info.audio_duration = _num(stream.get("duration"))
 
     if use_cache:
         with _CACHE_LOCK:

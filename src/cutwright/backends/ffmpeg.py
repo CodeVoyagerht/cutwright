@@ -151,6 +151,16 @@ class FFmpegBackend(Backend):
         if not timeline.clips:
             return BuildResult(backend=self.name, ok=False,
                                error="时间线里没有任何镜头，无法渲染")
+        overlaps = _overlap_spans(timeline)
+        if overlaps:
+            # 重叠不是「要不要坚持渲」的问题：concat 只能首尾相接，压住的画面无法表达。
+            # 要渲得先决定谁让谁——这一步机器替不了。
+            first = overlaps[0]
+            return BuildResult(
+                backend=self.name, ok=False,
+                error=("时间线上有 %d 处镜头重叠（最早一处：从 %.2fs 起与上一镜重叠 %.2fs）。"
+                       "concat 只能首尾相接，重叠的画面无法表达——把它们改成顺序排列，"
+                       "或删掉被压住的那一段再渲。" % (len(overlaps), first[0], first[1])))
 
         started = time.time()
         self.ensure_out_dir(out_dir)
@@ -208,6 +218,8 @@ class FFmpegBackend(Backend):
                 "audio": bool(ambient or self._music_items(timeline)),
                 "preview": bool(self.options.get("preview", False)),
                 "segments_reused": getattr(self, "_segments_reused", 0),
+                "segments_stale": getattr(self, "_segments_stale", 0),
+                "segments_deduped": getattr(self, "_segments_deduped", 0),
             },
             warnings=warnings,
         )
@@ -279,8 +291,34 @@ class FFmpegBackend(Backend):
             count = sum(1 for item in plans if item[1] is None)
             self._note("时间线有 %d 处空档（共 %.2fs），用黑场补齐" % (count, gap_total))
 
-        reused = [p for p in plans if use_cache and _has_bytes(p[3])]
-        pending = [p for p in plans if p not in reused]
+        # 缓存命中与否不能只看「文件非空」：编码被杀掉会留下几 KB 的半截 mp4，
+        # 它不是 0 字节，下次却会被当成品直接拼进成片（画面少一截、音轨照旧）。
+        # 所以复用前先验时长；对不上就重切。verify_cache=false 可关掉这一步。
+        reused: List[Tuple[int, Optional[TimelineClip], float, str]] = []
+        stale: List[str] = []
+        for plan in plans:
+            position, clip, gap_dur, out_path = plan
+            expected = gap_dur if clip is None else float(clip.tl_dur)
+            ok, why = (False, "不用缓存")
+            if use_cache:
+                ok, why = self._segment_usable(out_path, expected)
+            if ok:
+                reused.append(plan)
+            elif use_cache and os.path.exists(out_path):
+                stale.append(os.path.basename(out_path))
+                self._note(f"重切 {os.path.basename(out_path)}：{why}"
+                           f"（期望 {expected:.2f}s）")
+
+        # 同一段素材在分镜表里出现两次，摘要相同、路径也相同；两路 ffmpeg 同时
+        # 写同一个文件只会互相踩，切一遍就够。
+        pending: List[Tuple[int, Optional[TimelineClip], float, str]] = []
+        queued = {plan[3] for plan in reused}
+        for plan in plans:
+            if plan[3] in queued:
+                continue
+            queued.add(plan[3])
+            pending.append(plan)
+
         for position, clip, _dur, out_path in reused:
             label = clip.name if clip is not None else "空档"
             self._note(f"[{position or '-'}/{total}] 复用 {os.path.basename(out_path)}"
@@ -288,8 +326,14 @@ class FFmpegBackend(Backend):
             if clip is not None:
                 self._progress(position, total, clip.name)
         self._segments_reused = len(reused)
+        self._segments_stale = len(stale)
+        self._segments_deduped = len(plans) - len(queued)
         if reused:
             self._note(f"复用 {len(reused)} 段，省掉 {len(reused)} 次编码")
+        if stale:
+            self._note(f"丢弃 {len(stale)} 段坏缓存（时长对不上），已重切")
+        if self._segments_deduped:
+            self._note(f"{self._segments_deduped} 段与前面重复（同源同入点），只切一次")
 
         jobs = self._jobs(len(pending))
         if pending and jobs > 1:
@@ -323,15 +367,16 @@ class FFmpegBackend(Backend):
     def _encode_gap(self, out_path: str, width: int, height: int, fps: float,
                     duration: float) -> None:
         """空档：一段纯黑、无音轨的视频。"""
+        tmp_path = _part_path(out_path)
         cmd = [
             self.paths.ffmpeg, "-y", "-hide_banner", "-loglevel", "error",
             "-f", "lavfi", "-i", f"color=c=black:s={width}x{height}:r={_f(fps)}",
             "-t", _f(max(0.02, duration)), "-an",
             "-c:v", "libx264", "-preset", "veryfast", "-crf", "30",
             "-pix_fmt", "yuv420p", "-r", _f(fps),
-            "-g", str(max(1, int(round(fps * 2)))), out_path,
+            "-g", str(max(1, int(round(fps * 2)))), tmp_path,
         ]
-        self._run(cmd)
+        self._run_atomic(cmd, tmp_path, out_path)
 
     def _encode_one(self, position: int, clip: TimelineClip, out_path: str,
                     total: int, width: int, height: int, fps: float) -> None:
@@ -354,6 +399,34 @@ class FFmpegBackend(Backend):
         """
         raw = str(self.options.get("zoom_engine") or "").strip().lower()
         return raw if raw in ZOOM_ENGINES else DEFAULT_ZOOM_ENGINE
+
+    def _segment_usable(self, path: str, expected: float) -> Tuple[bool, str]:
+        """缓存片段还能不能用：非空、读得出、时长与计划一致。
+
+        只比「有没有字节」是不够的——被中断的编码会留下几 KB 的半截 mp4，
+        那种文件拼进成片就是一段画面凭空没了，而且成片体积、响度都正常。
+        """
+        if not _has_bytes(path):
+            return False, "空文件"
+        if not self._verify_cache():
+            return True, ""
+        try:
+            info = media.probe(path, self.paths, use_cache=False)
+        except Exception:  # noqa: BLE001 — 读不出来就是不完整，别拦渲染
+            return False, "读不出来（文件头没写完）"
+        if not info.has_video:
+            return False, "没有视频流"
+        if expected > 0:
+            tolerance = max(0.15, expected * 0.05)
+            if abs(info.duration - expected) > tolerance:
+                return False, f"时长 {info.duration:.2f}s 对不上"
+        return True, ""
+
+    def _verify_cache(self) -> bool:
+        raw = self.options.get("verify_cache")
+        if raw is None or raw == "":
+            return True
+        return str(raw).strip().lower() not in ("0", "false", "no", "off")
 
     def _jobs(self, pending: int) -> int:
         """并行路数：选项优先，否则按 CPU 与待切数量取小的那个。"""
@@ -389,10 +462,10 @@ class FFmpegBackend(Backend):
             "-pix_fmt", "yuv420p",
             "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709",
             "-r", _f(fps), "-g", str(max(1, int(round(fps * 2)))),
-            out_path,
+            _part_path(out_path),
         ]
         try:
-            self._run(cmd)
+            self._run_atomic(cmd, _part_path(out_path), out_path)
         except FFmpegError as exc:
             # 附带镜头序号往上抛：不带序号的话，40 个镜头里坏一个只能靠猜。
             raise SegmentError(exc.cmd, exc.code, exc.stderr,
@@ -960,6 +1033,24 @@ class FFmpegBackend(Backend):
         self._note("$ " + _join_cmd(cmd))
         return media.run(list(cmd))
 
+    def _run_atomic(self, cmd: Sequence[str], tmp_path: str, final_path: str) -> str:
+        """先写 ``.part``，成功了再改名——缓存目录里不该出现写了一半的成品。
+
+        中断时留下的是 ``*.part``：它不叫 ``seg_<摘要>.mp4``，所以永远不会被
+        当成缓存命中，也就不会把半截画面拼进成片。
+        """
+        try:
+            out = self._run(cmd)
+        except BaseException:
+            _discard(tmp_path)
+            raise
+        try:
+            os.replace(tmp_path, final_path)
+        except OSError:
+            _discard(tmp_path)
+            raise
+        return out
+
     def _note(self, message: str) -> None:
         handle = getattr(self, "_log_handle", None)
         if handle is not None:
@@ -1020,6 +1111,20 @@ def _has_bytes(path: str) -> bool:
         return os.path.getsize(path) > 0
     except OSError:
         return False
+
+
+def _discard(path: str) -> None:
+    """删掉中间产物；删不掉也不该盖掉真正的错误。"""
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+
+
+def _part_path(path: str) -> str:
+    """临时文件名。保留 ``.mp4`` 后缀——ffmpeg 靠后缀选封装器。"""
+    base, ext = os.path.splitext(path)
+    return f"{base}.part{ext or '.mp4'}"
 
 
 def _segment_plans(timeline: Timeline, build_dir: str, width: int, height: int,
@@ -1113,3 +1218,19 @@ def _style_digest(item: TimelineText) -> str:
         "1" if getattr(style, "invisible", False) else "0",
     ])
     return hashlib.sha1(payload.encode("utf-8")).hexdigest()[:8]
+
+
+def _overlap_spans(timeline: Timeline) -> List[Tuple[float, float]]:
+    """找出时间线上被后一镜压住的区间：``[(起点, 重叠时长), ...]``。
+
+    只用于拦错，不用于「修正」——重叠的哪一种让法（截断前镜还是后移后镜）
+    都会改变导演的意图，机器不该自己选。
+    """
+    spans: List[Tuple[float, float]] = []
+    cursor = 0.0
+    for clip in sorted(timeline.clips, key=lambda c: (float(c.tl_start), int(c.index))):
+        start = float(clip.tl_start)
+        if start < cursor - 0.001:
+            spans.append((start, round(cursor - start, 3)))
+        cursor = max(cursor, float(clip.tl_end))
+    return spans

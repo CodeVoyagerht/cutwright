@@ -660,6 +660,24 @@ class FFmpegBuildTest(unittest.TestCase):
             "快编档只该改画质，不该改时长：preview %d 帧 vs final %d 帧"
             % (preview_frames, final_frames))
 
+    def test_near_silent_film_skips_normalization(self):
+        """整片几乎无声时不能拉响度：那会把底噪放大几十 dB。"""
+        quiet = os.path.join(self.scratch, "quiet.mp4")
+        media.run([FFMPEG, "-y", "-hide_banner", "-loglevel", "error",
+                   "-f", "lavfi", "-i", "color=c=0x203040:s=320x180:r=30:d=2",
+                   "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000:duration=2",
+                   "-af", "volume=-70dB", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+                   "-c:a", "aac", "-shortest", quiet])
+        timeline = _timeline_from_clips([quiet])
+        out_dir = os.path.join(self.scratch, "out_quiet")
+        result = FFmpegBackend(paths=self.paths, options={"keep_temp": True}).build(
+            timeline, out_dir)
+        self.assertTrue(result.ok, msg=result.error)
+        joined = " ".join(result.warnings)
+        self.assertIn("跳过响度归一化", joined)
+        lufs = _integrated_lufs(result.artifacts[0], self.paths)
+        self.assertLess(lufs, -40.0, "几乎无声的片子不该被拉到 -14 LUFS")
+
     # -- 配乐给人声让路（ducking） ----------------------------------------- #
     def _duck_film(self, name: str, **options):
         raw = {

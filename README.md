@@ -30,6 +30,12 @@ cutwright build    shotlist.json --backend ffmpeg -o out
 `build` 结束时会自动体检成片（时长 / 分辨率 / 音轨 / 黑场 / 长静音），
 **不以「跑完了」为成功，以「实测数字对得上」为成功**。
 
+赶时间先看节奏？同一条命令加 `--fast`：切片与成片都换成更快的编码档（画质略降），
+1080×1920 的一条 7 镜片从「几分钟」压到「几十秒」，而且切片的缓存键不同、
+不会污染之后交付档的缓存。它会在末尾明确提醒你「这是预览、别拿去交付」。
+`--dry-run` 现在对 ffmpeg 后端也有效（以前只有剪映/达芬奇认），先把每一段切片的
+来源、入点、时长与成片路径列出来，不建目录也不起 ffmpeg。
+
 ![三条产线渲染出的三帧：标题卡 / 关键词换色的字幕 / 透出画面的画框叠加](docs/images/demo-frames.png)
 
 上面三帧来自仓库自带的 demo（`examples/demo`，素材全部用 ffmpeg lavfi 现造）：
@@ -179,9 +185,13 @@ $ cutwright import "C:\Users\me\...\com.lveditor.draft\我的草稿" -o shotlist
 ## 重复渲只重切改过的镜头
 
 切片按内容摘要命名（`_build/seg_<digest>.mp4`），同一份素材、同一组参数第二次渲染
-直接复用；`--opt jobs=4` 让多镜并行，`--opt preview=true` 用低码率快编一版看节奏。
-实测（8 镜 / 12.9s / 1080×1920）：串行 9.44s → 并行 7.85s → 并行 + 命中缓存 5.58s。
+直接复用；`--opt jobs=4` 让多镜并行，`--fast`（= `--opt preview=true`）用低码率快编
+一版看节奏。实测（8 镜 / 12.9s / 1080×1920）：串行 9.44s → 并行 7.85s → 并行 + 命中缓存 5.58s。
 镜头越多、缓存的差距越大——改一条字幕不该重切 40 个镜头。
+
+这些数字是**电脑上**的。CI 的 2 核 runner 慢得多，所以冒烟用例换成了自带的小样
+`examples/demo/shotlist-ci.json`（540×960 / 4 镜 / 6 秒），配上 `--fast` 本机 6 秒渲完；
+之前那条 1080p 的 19 分钟冒烟，现在整条流水线几十秒收工。
 
 ## 安装
 
@@ -263,10 +273,10 @@ python skills/cutwright/scripts/install.py --target all
 python -m unittest discover -s tests -t .
 ```
 
-299 个用例，零依赖，`git clone` 完就能跑。真渲染的用例会检测 ffmpeg，没有就 skip
+306 个用例，零依赖，`git clone` 完就能跑。真渲染的用例会检测 ffmpeg，没有就 skip
 而不是 fail——CI 上的 `windows-latest` 有 ffmpeg，本地没装的开发者也不该被卡住。
 
-这台机器上的实测记录（doctor / validate / plan / build / qc / 剪映草稿 / 299 个用例）
+这台机器上的实测记录（doctor / validate / plan / build / qc / 剪映草稿 / 306 个用例）
 都在 [docs/acceptance.md](docs/acceptance.md)，包括**哪些是未验收项**。
 
 契约测试（`tests/test_cli_contract.py`）锁死的是**机器可读的部分**：`--json` 的字段、

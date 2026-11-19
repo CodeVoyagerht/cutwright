@@ -36,7 +36,7 @@ cutwright build shotlist.json -b resolve  --opt grade=lut.cube
 | `duck` | `true` | 配乐给人声让路（侧链压缩，以环境声为侧链）。关掉就是固定音量相加 |
 | `duck_threshold` | `0.05` | 侧链触发阈值（0.001–1.0，线性）。人声很轻时压不下去就调小 |
 | `duck_ratio` | `8` | 压缩比（1–20）。越大让路越狠 |
-| `loudness` | `-14` | 成片目标响度（LUFS）。混完统一过 `loudnorm`，峰值压到 -1 dBTP；`false` / `0` 关掉，保留原始电平 |
+| `loudness` | `-14` | 成片目标响度（LUFS）。混完统一过 `loudnorm`，峰值压到 -1 dBTP；`false` / `0` 关掉，保留原始电平。**整片低于 -50 LUFS 时自动跳过**并记警告——无声片被拉满只会放大底噪 |
 | `music_loop` | `true` | 配乐比该段短时循环铺满；`false` 就只警告、尾巴留静音 |
 | `dry_run` | `false` | 只打印命令不执行 |
 

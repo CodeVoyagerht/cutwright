@@ -54,6 +54,8 @@ SEGMENT_CRF = 15
 # crf 28 + veryfast 的观感是「够看清字幕和构图」，不会用于交付。
 # 成片目标响度：短视频平台常见 -14 LUFS，峰值 -1 dBTP。
 DEFAULT_LOUDNESS = media.DEFAULT_LOUDNESS
+# 低于这个积分响度就算「整片几乎无声」：归一化会把底噪抬起来，不如不拉。
+QUIET_LUFS = -50.0
 PREVIEW_SEGMENT_CRF = 30
 PREVIEW_PRESET = "veryfast"
 
@@ -136,6 +138,9 @@ class FFmpegBackend(Backend):
             return BuildResult(backend=self.name, ok=False,
                                error="时间线里没有任何镜头，无法渲染")
 
+        if self.options.get("dry_run"):
+            return self._dry_run(timeline, out_dir)
+
         started = time.time()
         self.ensure_out_dir(out_dir)
         build_dir = os.path.join(out_dir, "_build")
@@ -194,6 +199,48 @@ class FFmpegBackend(Backend):
                 "segments_reused": getattr(self, "_segments_reused", 0),
             },
             warnings=warnings,
+        )
+
+    # -- 预演 -------------------------------------------------------------- #
+    def _dry_run(self, timeline: Timeline, out_dir: str) -> BuildResult:
+        """只算不渲：给出每一段切片的来源/入点/时长，以及成片会落在哪。
+
+        ``--dry-run`` 以前在 ffmpeg 后端上是**空操作**（只有剪映/达芬奇认这个开关），
+        于是「先看一眼要渲多少段、会不会很慢」只能靠读源码。这里补上：不建目录、
+        不跑 ffmpeg、不写日志，只把计划和切片缓存名算出来。
+
+        切片名用的是同一个内容摘要，所以预演里看到的 ``seg_xxx.mp4`` 就是真渲时
+        会复用/生成的那一个——想估缓存命中率也能直接看。
+        """
+        width = int(timeline.canvas.width)
+        height = int(timeline.canvas.height)
+        fps = float(timeline.fps or 30.0)
+        total = self._total_duration(timeline)
+        shots = []
+        for position, clip in enumerate(timeline.clips, start=1):
+            digest = _segment_digest(clip, width, height, fps, self.options)
+            shots.append({
+                "index": position,
+                "name": clip.name,
+                "source": clip.source,
+                "src_in": round(float(clip.src_in), 3),
+                "src_dur": round(float(clip.src_dur), 3),
+                "tl_start": round(float(clip.tl_start), 3),
+                "segment": f"_build/seg_{digest}.mp4",
+            })
+        return BuildResult(
+            backend=self.name,
+            ok=True,
+            artifacts=[],
+            data={
+                "dry_run": True,
+                "preview": bool(self.options.get("preview")),
+                "output": os.path.abspath(os.path.join(out_dir, f"{timeline.name}.mp4")),
+                "canvas": f"{width}x{height}",
+                "fps": fps,
+                "duration": round(total, 3),
+                "shots": shots,
+            },
         )
 
     # -- 切片 -------------------------------------------------------------- #
@@ -621,6 +668,15 @@ class FFmpegBackend(Backend):
         if mixed:
             target = self._loudness_target()
             if target is not None:
+                quiet = self._quiet_lufs(ambient, music_pads)
+                if quiet is not None:
+                    # 整片几乎没有声音时 loudnorm 会把底噪一路拉上来（实测 -65 LUFS
+                    # 的片子被拉到 -14，等于把电流声放大 50 dB）。宁可保持原样。
+                    warnings.append(
+                        "整片几乎没有声音（%.0f LUFS），跳过响度归一化"
+                        "——拉满只会把底噪抬起来" % quiet)
+                    target = None
+            if target is not None:
                 # 每个镜头只对齐到 -20 dBFS，混完整体还是偏轻；成片这一层必须
                 # 有响度归一化，否则手机上听着比参考片小一截。
                 graph.append(f"[aout]loudnorm=I={_f(target)}:TP=-1.0:LRA=11[afin]")
@@ -699,6 +755,19 @@ class FFmpegBackend(Backend):
             fade_start = max(0.0, start + dur - min(fade_out, dur))
             parts.append(f"fade=t=out:st={_f(fade_start)}:d={_f(min(fade_out, dur))}:alpha=1")
         return f"[{input_index}:v]{','.join(parts)}[{label}]"
+
+    def _quiet_lufs(self, ambient: Optional[str],
+                    music_pads: Sequence[str]) -> Optional[float]:
+        """整片是不是「几乎无声」。返回测到的 LUFS，不是就返回 None。
+
+        只看环境声：有配乐就说明片子里本来就有声音，不该跳过归一化。
+        """
+        if music_pads or not ambient:
+            return None
+        lufs = media.integrated_loudness(ambient, self.paths)
+        if lufs is None or lufs > QUIET_LUFS:
+            return None
+        return lufs
 
     def _duck_enabled(self) -> bool:
         """配乐要不要给人声让路。默认开；``--opt duck=false`` 关掉。"""

@@ -219,6 +219,34 @@ def mean_volume_db(path: str, paths: Optional[config.Paths] = None) -> Optional[
     return float(m.group(1)) if m else None
 
 
+def integrated_loudness(path: str,
+                        paths: Optional[config.Paths] = None) -> Optional[float]:
+    """EBU R128 积分响度（LUFS）。量不出来返回 ``None``。
+
+    和 :func:`mean_volume_db` 一样，结果写在 stderr、退出码恒为 0，所以不用 ``run()``。
+    老版本 ffmpeg 没有 ``ebur128`` 时返回 None——宁可不知道，也不要编一个数。
+    """
+    paths = paths or config.discover()
+    ffmpeg = paths.ffmpeg
+    if not ffmpeg or not os.path.isfile(path):
+        return None
+    import subprocess
+    cmd = [ffmpeg, "-hide_banner", "-nostats", "-i", path,
+           "-af", "ebur128", "-f", "null", os.devnull]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, timeout=120)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    text = (proc.stderr or b"").decode("utf-8", "replace")
+    found = re.findall(r"I:\s+(-?\d+\.\d+) LUFS", text)
+    if not found:
+        return None
+    try:
+        return float(found[-1])
+    except ValueError:
+        return None
+
+
 def extract_frame(path: str, out_png: str, at: float = 0.0, width: int = 480,
                   paths: Optional[config.Paths] = None) -> str:
     """抽一帧当缩略图 / 封面。已存在则不重做（幂等）。"""

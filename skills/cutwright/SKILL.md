@@ -49,6 +49,10 @@ cutwright doctor                                  # ① 确认 ffmpeg 可用
 cutwright init work                               # ② 生成骨架（不需要素材）
 ```
 
+> **`cutwright` 报 command not found？** pip 装完之后 `Scripts\` 常常没进 PATH（Windows 尤其常见）。
+> 这时 `python -m cutwright doctor` 跟 `cutwright doctor` 完全等价，下面所有命令都能这么写，
+> 别在 PATH 上卡住。
+
 **③ 写分镜表**。这是唯一需要判断力的步骤，看下面「剪辑判断规则」。
 素材放 `work/materials/`，文件名与 `video_segments[].file` 对齐。
 

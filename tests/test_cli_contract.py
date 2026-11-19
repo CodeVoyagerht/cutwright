@@ -16,6 +16,7 @@ import json
 import os
 import unittest
 from contextlib import redirect_stdout, redirect_stderr
+from unittest import mock
 
 from . import tmpdir
 
@@ -244,6 +245,94 @@ class TestShippedExamples(unittest.TestCase):
         self.assertLessEqual(data["canvas"]["width"], 720)
         self.assertLessEqual(data["total_duration"], 8.0)
         self.assertLessEqual(len(data["video_segments"]), 4)
+
+
+class TestDryRunPlan(unittest.TestCase):
+    """``--dry-run`` 一定要给出一张「第几段、用哪一秒、缓存名是什么」的表。
+
+    以前 ffmpeg 后端不认这个开关（只有剪映/达芬奇认），于是它既不出表也不出片，
+    用户以为「预演成功了」——其实是照渲不误。现在它必须：不建目录、不调 ffmpeg，
+    并且把计划打成人能读的样子。
+    """
+
+    def setUp(self):
+        self._tmp = tmpdir("cli-dryrun")
+        self.dir = self._tmp.__enter__()
+
+    def tearDown(self):
+        self._tmp.__exit__(None, None, None)
+
+    def _write(self, name, payload):
+        path = os.path.join(self.dir, name)
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(payload, fh, ensure_ascii=False)
+        return path
+
+    def test_plan_lists_every_shot(self):
+        path = self._write("ok.json", CLEAN)
+        code, out, _ = _run(["build", path, "-o", self.dir, "--dry-run", "--force"])
+        self.assertEqual(code, 0)
+        self.assertIn("计划:", out)
+        self.assertIn("2 段切片", out)
+        for name in ("a.mp4", "b.mp4"):
+            self.assertIn(name, out)
+        self.assertIn("_build/seg_", out)
+
+    def test_dry_run_writes_nothing(self):
+        path = self._write("ok.json", CLEAN)
+        out_dir = os.path.join(self.dir, "out")
+        code, _, _ = _run(["build", path, "-o", out_dir, "--dry-run", "--force"])
+        self.assertEqual(code, 0)
+        self.assertFalse(os.path.exists(out_dir), "预演不该创建输出目录")
+
+    def test_plan_says_preview_when_fast(self):
+        path = self._write("ok.json", CLEAN)
+        _, out, _ = _run(["build", path, "-o", self.dir, "--dry-run",
+                          "--fast", "--force"])
+        self.assertIn("预览档", out)
+
+
+class TestDryRunWithoutTools(unittest.TestCase):
+    """没装 ffmpeg 的机器上，预演也得能看方案。
+
+    CI 的单元测试机就是不装 ffmpeg 的：``build`` 以前先判后端可用性、后看
+    ``dry_run``，于是 ``build --dry-run`` 在那种机器上直接返回 1（真实踩过，
+    四个 job 一起红）。预演只算计划、不起 ffmpeg，所以它不该被可用性挡住。
+    """
+
+    def setUp(self):
+        self._tmp = tmpdir("cli-notools")
+        self.dir = self._tmp.__enter__()
+
+    def tearDown(self):
+        self._tmp.__exit__(None, None, None)
+
+    def test_dry_run_needs_no_ffmpeg(self):
+        from cutwright import config
+
+        fake = config.Paths(ffmpeg=None, ffprobe=None)
+        path = os.path.join(self.dir, "ok.json")
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(CLEAN, fh, ensure_ascii=False)
+        with mock.patch.object(config, "discover", return_value=fake):
+            code, data = _json_stdout(["build", path, "-o", self.dir,
+                                       "--dry-run", "--json", "--force"])
+        self.assertEqual(code, 0)
+        self.assertTrue(data["result"]["data"]["dry_run"])
+        self.assertEqual(len(data["result"]["data"]["shots"]), 2)
+
+    def test_real_build_still_refuses(self):
+        """反过来说：真要渲染时，缺 ffmpeg 必须明确拒绝，不能假装成功。"""
+        from cutwright import config
+
+        fake = config.Paths(ffmpeg=None, ffprobe=None)
+        path = os.path.join(self.dir, "ok.json")
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(CLEAN, fh, ensure_ascii=False)
+        with mock.patch.object(config, "discover", return_value=fake):
+            code, _, err = _run(["build", path, "-o", self.dir, "--force"])
+        self.assertEqual(code, 1)
+        self.assertIn("ffmpeg", err)
 
 
 if __name__ == "__main__":

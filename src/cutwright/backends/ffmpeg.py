@@ -132,14 +132,16 @@ class FFmpegBackend(Backend):
         任何一个镜头切片失败都会抛 :class:`SegmentError`（``FFmpegError`` 的子类），
         不会静默跳过。
         """
+        # 预演先走：它只算计划、不起 ffmpeg，所以没装 ffmpeg 的机器上也该能看方案
+        # （CI 的单元测试机就是这样——以前先判可用性，预演在无 ffmpeg 的机器上直接红）。
+        if self.options.get("dry_run"):
+            return self._dry_run(timeline, out_dir)
+
         if not self.available():
             return BuildResult(backend=self.name, ok=False, error=self.why_unavailable())
         if not timeline.clips:
             return BuildResult(backend=self.name, ok=False,
                                error="时间线里没有任何镜头，无法渲染")
-
-        if self.options.get("dry_run"):
-            return self._dry_run(timeline, out_dir)
 
         started = time.time()
         self.ensure_out_dir(out_dir)

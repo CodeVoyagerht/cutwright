@@ -232,6 +232,26 @@ def _write_shotlist(sl: Shotlist, path: str) -> None:
 # --------------------------------------------------------------------------- #
 # build
 # --------------------------------------------------------------------------- #
+def _print_plan(plan: Dict[str, Any]) -> None:
+    """把 ``--dry-run`` 的计划打成人能读的样子。
+
+    JSON 里本来就有完整字段，但没人愿意对着字典数「第几段用哪一秒」；
+    ``--dry-run`` 存在的意义就是先看一眼，所以这里把它摊成一张表。
+    """
+    shots = plan.get("shots") or []
+    if not shots:
+        return
+    speed = "（--fast 预览档）" if plan.get("preview") else ""
+    print(f"\n计划: {len(shots)} 段切片 → {plan.get('output', '')}")
+    print(f"  画布 {plan.get('canvas', '?')} @ {plan.get('fps', '?')}fps，"
+          f"成片 {plan.get('duration', '?')}s{speed}")
+    for shot in shots:
+        print(f"  [{shot['index']}] {shot['name']:<16s}"
+              f" 入点 {shot['src_in']:>7.3f}s +{shot['src_dur']:.2f}s"
+              f"  → {shot['segment']}")
+    print("  （切片名带内容摘要：名字一样就是能直接复用的缓存）")
+
+
 def cmd_build(args: argparse.Namespace) -> int:
     sl = _load(args.shotlist)
     issues = validate(sl, check_files=bool(args.check_files))
@@ -273,8 +293,12 @@ def cmd_build(args: argparse.Namespace) -> int:
         return 1
 
     out_dir = os.path.abspath(args.out or "out")
-    os.makedirs(out_dir, exist_ok=True)
-    _err(f"[{args.backend}] 开始构建 {tl.name} → {out_dir}")
+    if not args.dry_run:
+        os.makedirs(out_dir, exist_ok=True)
+    if args.dry_run:
+        _err(f"[{args.backend}] 预演 {tl.name}（不渲染）→ {out_dir}")
+    else:
+        _err(f"[{args.backend}] 开始构建 {tl.name} → {out_dir}")
     result = backend.build(tl, out_dir)
 
     data = {"backend": args.backend, "out_dir": out_dir,
@@ -292,9 +316,11 @@ def cmd_build(args: argparse.Namespace) -> int:
     if args.json:
         _print_json(data)
     else:
+        if options.get("dry_run"):
+            _print_plan(data["result"]["data"])
         if options.get("preview"):
             _err("这是 --fast 快速预览（编码更快、画质略降）。要交付就用同一条命令去掉 --fast 再渲一次。")
-        if result.ok:
+        if result.ok and not options.get("dry_run"):
             print(f"构建成功（{args.backend}）")
             for artifact in result.artifacts:
                 print(f"  → {artifact}")

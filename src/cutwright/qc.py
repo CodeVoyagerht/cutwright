@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from . import config, media
-from .schema import Issue
+from .schema import KEYWORD_SEPARATORS, Issue
 from .timeline import Timeline
 
 __all__ = [
@@ -83,6 +83,11 @@ class QcReport:
 # --------------------------------------------------------------------------- #
 # 时间线健康度
 # --------------------------------------------------------------------------- #
+# 字幕可读性：中文舒适阅读约 4–8 字/秒，短视频字幕再挤也不该超过这个数。
+# 30 字挂 1.2 秒是 25 字/秒——观众读不完，只会觉得「字糊了一下」。
+CAPTION_CPS_MAX = 12.0
+
+
 def check_timeline(tl: Timeline, *, gap_tolerance: float = 0.02,
                    overlap_tolerance: float = 0.02) -> QcReport:
     """检查时间线本身（不碰 ffmpeg）。"""
@@ -151,6 +156,27 @@ def check_timeline(tl: Timeline, *, gap_tolerance: float = 0.02,
     report.add("texts_in_range", not out_of_range,
                "文字都在成片范围内" if not out_of_range else
                "越界: " + ", ".join(f"#{i} 超出 {d:.2f}s" for i, d in out_of_range))
+    # 读得完吗？——「字幕在画面内」不等于「有人读得完」。30 字挂 1.2 秒没人跟得上。
+    crowded = []
+    for text in tl.texts:
+        if not text.visible or text.tl_dur <= 0:
+            continue
+        body = "".join(ch for ch in (text.text or "")
+                       if ch not in KEYWORD_SEPARATORS)
+        if not body.strip():
+            continue
+        cps = len(body) / float(text.tl_dur)
+        if cps > CAPTION_CPS_MAX:
+            crowded.append((text.index, len(body), float(text.tl_dur), cps))
+            report.issues.append(Issue(
+                "warn", "Q105",
+                f"字幕 #{text.index} 有 {len(body)} 字只挂了 {text.tl_dur:.2f}s"
+                f"（{cps:.1f} 字/秒，上限 {CAPTION_CPS_MAX:.0f}）——观众读不完",
+                f"texts[{text.index}]"))
+    report.add("text_readable", not crowded,
+               "字幕速度都在可读范围内" if not crowded else
+               "太快: " + ", ".join(f"#{i} {cps:.1f} 字/秒" for i, _, _, cps in crowded),
+               severity="warn")
     vo_visible = any(t.role == "vo" and t.visible for t in tl.texts)
     report.add("vo_hidden", not vo_visible,
                "旁白层不可见" if not vo_visible else "存在可见的旁白层")

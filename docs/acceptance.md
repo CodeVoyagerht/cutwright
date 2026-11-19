@@ -57,7 +57,7 @@ codec h264 / 1080x1920 / 30 fps / 13.800 s / aac 48000 Hz 双声道 / 636,967 �
 中间件留在 `out\_build\`（`seg_000.mp4` … `render.log`），出问题时能直接看到
 是哪一段、哪条滤镜炸的。
 
-## 4. 成片体检（`qc`）——22 项全过
+## 4. 成片体检（`qc`）——23 项全过
 
 ```
 clips_present  starts_at_zero  no_gaps  no_overlaps  no_zero_length
@@ -153,7 +153,7 @@ cutwright build real-11-13.json -o out
 
 ```
 python -m unittest discover -s tests -t .
-Ran 288 tests in 72.092s
+Ran 291 tests in 55.909s
 OK (skipped=2)
 ```
 
@@ -174,7 +174,7 @@ cutwright story examples/stress_long/screenplay.json --index materials.json -o s
   素材复用 14 段撑 66 镜（最多 7 次）
 cutwright validate shotlist.json --check-files → 0 个错误，0 个警告
 cutwright build shotlist.json -o out --opt jobs=4 → 157.7s，成片体检 8 项全 OK
-cutwright qc shotlist.json --mp4 "out\长夜名单 第1集.mp4" → 22 项全过
+cutwright qc shotlist.json --mp4 "out\长夜名单 第1集.mp4" → 23 项全过
 ```
 
 响度：同一条片子做完响度归一化后积分 **-13.8 LUFS**（峰值 -11.9 dB）；

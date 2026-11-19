@@ -156,3 +156,57 @@ class WarnPathTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def _timeline_with_captions(*texts):
+    """造一条只有字幕的时间线：texts 是 (文案, 时长) 二元组。"""
+    from cutwright.schema import Canvas, Shotlist
+    from cutwright.timeline import Timeline
+
+    segments = [{"file": "a.mp4", "src_start": 0.0, "src_dur": 4.0}]
+    cursor = 0.0
+    for body, dur in texts:
+        segments.append(segments[0])
+        cursor += dur
+    raw = {"name": "cap", "canvas": {"width": 1080, "height": 1920}, "fps": 30,
+           "video_segments": [{"file": "a.mp4", "src_start": 0.0, "src_dur": 4.0}],
+           "text_segments": [{"text": body, "tl_start": i * 1.0, "tl_dur": dur}
+                             for i, (body, dur) in enumerate(texts)]}
+    return Timeline.from_shotlist(Shotlist.from_dict(raw))
+
+
+class CaptionReadableTest(unittest.TestCase):
+    """qc 不只查「字幕在画面内」，还要查「读不读得完」。"""
+
+    def test_too_many_chars_per_second_warns(self):
+        tl = _timeline_with_captions(
+            ("这一条字幕特意写得很长很长很长三十个字左右", 1.2))
+        report = qc.check_timeline(tl)
+        check = [c for c in report.checks if c.name == "text_readable"][0]
+        self.assertFalse(check.ok, "25 字/秒必须被判不可读")
+        self.assertEqual(check.severity, "warn")
+        # 读得慢是提醒：Q105 只能是 warn，绝不能升级成 error。
+        self.assertTrue([i for i in report.issues
+                         if i.code == "Q105" and i.level == "warn"])
+        self.assertFalse([i for i in report.issues
+                          if i.code == "Q105" and i.level == "error"])
+
+    def test_comfortable_speed_passes(self):
+        # 19 字挂 3.8 秒 ≈ 5 字/秒，属于舒适范围。
+        tl = _timeline_with_captions(("我觉得你该先睡一觉，再决定要不要停", 3.8))
+        report = qc.check_timeline(tl)
+        check = [c for c in report.checks if c.name == "text_readable"][0]
+        self.assertTrue(check.ok, check.detail)
+
+    def test_invisible_voiceover_is_ignored(self):
+        from cutwright.schema import TextStyle
+        from cutwright.timeline import Timeline
+        from cutwright.schema import Shotlist
+
+        raw = {"name": "vo", "canvas": {"width": 1080, "height": 1920}, "fps": 30,
+               "video_segments": [{"file": "a.mp4", "src_start": 0.0, "src_dur": 3.0}],
+               "vo_segments": [{"text": "这句旁白很长很长很长很长很长很长", "tl_dur": 1.0}],
+               "styles": {"vo_hidden": {"role": "vo_hidden", "invisible": True}}}
+        report = qc.check_timeline(Timeline.from_shotlist(Shotlist.from_dict(raw)))
+        check = [c for c in report.checks if c.name == "text_readable"][0]
+        self.assertTrue(check.ok, "旁白不出字，不该按字幕算可读性")

@@ -260,10 +260,10 @@ python skills/cutwright/scripts/install.py --target all
 python -m unittest discover -s tests -t .
 ```
 
-288 个用例，零依赖，`git clone` 完就能跑。真渲染的用例会检测 ffmpeg，没有就 skip
+291 个用例，零依赖，`git clone` 完就能跑。真渲染的用例会检测 ffmpeg，没有就 skip
 而不是 fail——CI 上的 `windows-latest` 有 ffmpeg，本地没装的开发者也不该被卡住。
 
-这台机器上的实测记录（doctor / validate / plan / build / qc / 剪映草稿 / 288 个用例）
+这台机器上的实测记录（doctor / validate / plan / build / qc / 剪映草稿 / 291 个用例）
 都在 [docs/acceptance.md](docs/acceptance.md)，包括**哪些是未验收项**。
 
 契约测试（`tests/test_cli_contract.py`）锁死的是**机器可读的部分**：`--json` 的字段、
@@ -281,7 +281,7 @@ cutwright build    examples/demo/shotlist.json -o examples/demo/out # 13.8s 成�
 cutwright qc       examples/demo/shotlist.json --mp4 examples/demo/out/demo-reel.mp4
 ```
 
-`qc` 的 22 项全部要 `OK` 才算过：镜数对得上、首帧从 0 开始、无空档无重叠、变速后在范围内、
+`qc` 的 23 项全部要 `OK` 才算过：镜数对得上、首帧从 0 开始、无空档无重叠、变速后在范围内、
 响度落在 -14 LUFS ±3、真峰值不超过 -1 dBTP、
 字幕都在片长内、旁白不可见、叠加层有效、音轨存在、时长偏差 <0.25s、分辨率一致、
 没有超过阈值的黑场与静音。这条链在 CI 的 `render` job 里也会跑，产物作为 artifact 上传。

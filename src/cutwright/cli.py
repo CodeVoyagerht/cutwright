@@ -317,10 +317,9 @@ def cmd_build(args: argparse.Namespace) -> int:
         _print_json(data)
     else:
         if options.get("dry_run"):
+            # 预演到此为止：它不是「失败」，也不该掉进下面那条失败分支
             _print_plan(data["result"]["data"])
-        if options.get("preview"):
-            _err("这是 --fast 快速预览（编码更快、画质略降）。要交付就用同一条命令去掉 --fast 再渲一次。")
-        if result.ok and not options.get("dry_run"):
+        elif result.ok:
             print(f"构建成功（{args.backend}）")
             for artifact in result.artifacts:
                 print(f"  → {artifact}")
@@ -329,6 +328,8 @@ def cmd_build(args: argparse.Namespace) -> int:
                     print(f"  {key}: {value}")
         else:
             _err(f"构建失败（{args.backend}）: {result.error}")
+        if options.get("preview"):
+            _err("这是 --fast 快速预览（编码更快、画质略降）。要交付就用同一条命令去掉 --fast 再渲一次。")
         for warning in result.warnings:
             _err(f"警告: {warning}")
         if "render_qc" in data:

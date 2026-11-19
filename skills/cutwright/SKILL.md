@@ -170,6 +170,10 @@ cutwright build shotlist.json -o out               # ④ 出片（或 -b jianyin
 赶进度用 `--fast` 出预览、定下节奏后再去掉它渲交付档——这是本工具推荐的用法，
 不是「先快后忘」的借口：交付的那一版必须是不带 `--fast` 的。
 
+省多少要看片子：编码重的省得多，**推近镜头（Ken-Burns）多的省不动**——瓶颈在 `zoompan`
+滤镜，不在码率与 preset。要压时间先数 `zoom` 的个数，别先调 `-preset`。
+完整走查（含本机耗时表、手边没素材也能跑）：`references/quickstart.md`。
+
 全命令支持 `--json`：stdout 只有 JSON，日志走 stderr。给机器读就用它。
 
 ## 验收清单

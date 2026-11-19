@@ -263,6 +263,28 @@ def _timeline_from_clips(sources: List[str]) -> Timeline:
     return Timeline.from_shotlist(Shotlist.from_dict(raw))
 
 
+class TextCacheKeyTest(unittest.TestCase):
+    """字幕 PNG 的缓存键必须带上画布尺寸。
+
+    PNG 是按 canvas 尺寸渲的，缓存名只记「文案 + 样式」的话，先渲 540×960
+    再改 1080×1920，第二遍会直接复用那张小图——字变小、位置也偏，
+    而成片能正常出、体检也过，属于典型的静默错。
+    """
+
+    def test_style_digest_depends_on_canvas(self) -> None:
+        from cutwright.backends.ffmpeg import _style_digest
+        from cutwright.schema import TextStyle
+        from cutwright.timeline import TimelineText
+
+        item = TimelineText(index=1, text="素材|整理", tl_start=0.0, tl_dur=1.0,
+                            style_name="caption", style=TextStyle())
+        small = _style_digest(item, 540, 960)
+        large = _style_digest(item, 1080, 1920)
+        self.assertNotEqual(small, large)
+        # 同一画布同一文案必须稳定，否则每次重渲都新出一张 PNG。
+        self.assertEqual(small, _style_digest(item, 540, 960))
+
+
 @SKIP_TOOLS
 class FFmpegBuildTest(unittest.TestCase):
     """真的跑 ffmpeg：合成素材、渲染、再用 ffprobe 复核成片。"""

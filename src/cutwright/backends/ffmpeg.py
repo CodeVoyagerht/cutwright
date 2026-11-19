@@ -675,7 +675,7 @@ class FFmpegBackend(Backend):
         for item in timeline.texts:
             if not item.visible:
                 continue
-            digest = _style_digest(item)
+            digest = _style_digest(item, width, height)
             png = os.path.join(text_dir, f"text_{item.index:03d}_{digest}.png")
             if not (os.path.exists(png) and os.path.getsize(png) > 0):
                 text.render_text_png(item.text, item.style, (width, height), png)
@@ -1192,17 +1192,21 @@ def _join_cmd(cmd: Sequence[str]) -> str:
         return " ".join(str(part) for part in cmd)
 
 
-def _style_digest(item: TimelineText) -> str:
+def _style_digest(item: TimelineText, width: int, height: int) -> str:
     """字幕内容的短摘要，用来给缓存文件名去重。
 
-    只取影响像素的几个字段（文案、字号、颜色、版式），这样「时间改了但画面没
-    变」的字幕还能命中缓存。
+    只取影响像素的几个字段（文案、字号、颜色、版式、**画布尺寸**），这样
+    「时间改了但画面没变」的字幕还能命中缓存。
+
+    画布尺寸必须进摘要：字幕 PNG 是渲染成 canvas 同尺寸的，只按文案记名字的话，
+    先渲 540×960 再改 1080×1920，第二遍会直接把小图铺上去——字变小、位置偏。
     """
     style = item.style
     payload = "|".join([
         # 排版版本号必须进摘要：只摘要「文案 + 样式」的话，升级渲染器之后
         # 同样的文件名会命中旧 PNG，成片看起来「代码改了却没变化」。
         f"v{text.RENDER_VERSION}",
+        f"{int(width)}x{int(height)}",
         item.text or "",
         _f(float(getattr(style, "font_height_px", 0.0)), 2),
         str(getattr(style, "color", "")),

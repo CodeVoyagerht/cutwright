@@ -16,7 +16,7 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from . import config, media
 from .schema import KEYWORD_SEPARATORS, Issue
@@ -97,6 +97,18 @@ def check_timeline(tl: Timeline, *, gap_tolerance: float = 0.02,
         report.add("clips_present", False, "时间线没有任何镜头")
         return report
     report.add("clips_present", True, f"{len(tl.clips)} 个镜头")
+
+    # --- 节奏（素材是否过度重复、镜长是否出格）---
+    # 手写分镜表的人走不到 story 的节奏建议，所以同一套判断在 qc 里也要做一遍。
+    rhythm_notes = _rhythm_issues(tl.clips)
+    if rhythm_notes:
+        report.add("shot_rhythm", False,
+                   "；".join(text for _code, text in rhythm_notes),
+                   severity="warn")
+        for code, text in rhythm_notes:
+            report.issues.append(Issue("warn", code, text))
+    else:
+        report.add("shot_rhythm", True, "素材与镜长分布没看出问题")
 
     # --- 首尾与总长 ---
     first_gap = tl.clips[0].tl_start
@@ -387,3 +399,46 @@ def run_all(tl: Timeline, mp4: Optional[str] = None,
         report.checks.extend(rendered.checks)
         report.issues.extend(rendered.issues)
     return report
+
+
+def _rhythm_issues(clips) -> List[Tuple[str, str]]:
+    """素材是不是被一段反复用、镜长是不是出格。
+
+    只报机器判断得了的：同一场里镜头多而素材少、平均镜长偏长/偏碎、
+    六成镜头长度挤在均值附近、存在超过 4s 的长镜。审美上的取舍不在这里说。
+    """
+    if not clips:
+        return []
+    notes: List[Tuple[str, str]] = []
+
+    groups: Dict[str, list] = {}
+    for clip in clips:
+        key = (getattr(clip, "act", "") or "").strip() or "全部"
+        groups.setdefault(key, []).append(clip)
+
+    for act, items in groups.items():
+        files = {getattr(item, "source", "") for item in items}
+        if len(items) >= 4 and len(files) <= 2:
+            notes.append((
+                "Q106",
+                f"{act}：{len(items)} 镜只用 {len(files)} 段素材"
+                f"（平均 {len(items) / max(1, len(files)):.1f} 镜/段），容易看出重样"))
+
+    durs = [float(item.tl_dur) for item in clips]
+    mean = sum(durs) / len(durs)
+    if mean > 3.0:
+        notes.append(("Q107", f"平均镜长 {mean:.1f}s 偏长（短剧通常 1.6–2.4s），可以在台词间加切点"))
+    elif mean < 1.2:
+        notes.append(("Q107", f"平均镜长 {mean:.1f}s 偏碎，观众来不及看清"))
+    if len(durs) >= 6:
+        band = sum(1 for d in durs if abs(d - mean) <= 0.2)
+        if band / len(durs) >= 0.6:
+            notes.append(("Q108",
+                          "节奏单一：%.0f%% 的镜头都在 %.1f±0.2s，混几镜短镜与长镜更有起伏"
+                          % (100.0 * band / len(durs), mean)))
+    longest = max(durs)
+    if longest > 4.0:
+        notes.append(("Q108",
+                      f"有 {sum(1 for d in durs if d > 4.0)} 镜超过 4.0s"
+                      f"（最长 {longest:.1f}s），观众会等"))
+    return notes

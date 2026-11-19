@@ -323,6 +323,55 @@ class BuildShotlistTest(unittest.TestCase):
                              second.tl_start + 1e-3,
                              "字幕不能压到下一句上")
 
+    # -- 节奏建议 ---------------------------------------------------------- #
+    def _one_piece_index(self):
+        return story.MaterialIndex(pieces=[
+            story.Piece(file="/m/subway_wide.mp4", start=0.0, dur=6.0,
+                        tags=["subway", "night", "wide"]),
+        ])
+
+    def test_scene_with_one_piece_is_called_out(self):
+        sp = sp_mod.Screenplay(
+            name="单段", canvas=sp_mod.Canvas(1080, 1920), fps=30.0,
+            material_dir="m",
+            scenes=[sp_mod.Scene(id="S1", tags=["subway", "night"], lines=[
+                sp_mod.Line(text="第一句话在这里"),
+                sp_mod.Line(text="第二句话也在这里"),
+                sp_mod.Line(text="第三句话还在这里"),
+                sp_mod.Line(text="第四句话仍在这里"),
+            ])],
+        )
+        _, report = story.build_shotlist(sp, self._one_piece_index(),
+                                         story.StoryOptions())
+        joined = " ".join(report.rhythm)
+        self.assertIn("S1", joined)
+        self.assertIn("1 段素材", joined)
+
+    def test_uniform_lengths_are_called_out(self):
+        # 五句一样长 → 无节奏权重差异时长度几乎一致，应当提醒「节奏单一」
+        lines = [sp_mod.Line(text="这是一句长度完全相同的台词") for _ in range(8)]
+        sp = sp_mod.Screenplay(
+            name="齐整", canvas=sp_mod.Canvas(1080, 1920), fps=30.0,
+            material_dir="m",
+            scenes=[sp_mod.Scene(id="S1", tags=["subway", "night"], lines=lines)],
+        )
+        index = story.MaterialIndex(pieces=[
+            story.Piece(file=f"/m/p{i}.mp4", start=0.0, dur=6.0,
+                        tags=["subway", "night"]) for i in range(4)
+        ])
+        _, report = story.build_shotlist(sp, index, story.StoryOptions(rhythm=False))
+        joined = " ".join(report.rhythm)
+        self.assertIn("节奏单一", joined)
+
+    def test_short_film_gets_no_noise(self):
+        sl, report, _ = self.build()
+        for note in report.rhythm:
+            self.assertNotIn("建议优化", note, "别写这种没信息量的建议")
+
+    def test_rhythm_notes_are_in_report_dict(self):
+        _, report, _ = self.build()
+        self.assertIn("rhythm", report.to_dict())
+
     def test_report_counts_reuse(self):
         sl, report, _ = self.build()
         self.assertEqual(sum(report.reuse.values()), len(sl.video_segments))

@@ -39,6 +39,11 @@
 
 ### 修复
 
+- **`story` 给出节奏建议**：每场只用了 1–2 段素材、平均镜长出格（>3.0s 或 <1.2s）、
+  六成镜头的长度都挤在均值 ±0.2s、存在 >4.0s 的长镜——这几种机器判断得了的问题现在
+  逐条写出来，且都指名场景、带数字与可执行动作（补拍几段 / 加切点 / 混短镜）。
+  `--json` 里是 `report.rhythm` 数组。新增 `tests/test_story.py` 四条用例。
+
 - **`import` 说清「丢了多少」**：以前只有一句笼统的「转场、关键帧、特效不还原」。
   现在从草稿里数出转场 / 特效·滤镜 / 关键帧各多少个（`materials.transitions`、
   `video_effects`/`effects`/`filters`、段落 `common_keyframes` 与全局 `keyframes`），

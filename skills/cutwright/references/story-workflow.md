@@ -81,6 +81,7 @@ cutwright story screenplay.json --index materials.json --min-shot 0.8 --max-shot
 跑完 `story`，按顺序看这四个东西，都有一个明确的输出：
 
 1. `story` 打印的场次表：每场的 `镜头数` 是否 ≥ 台词数的一半（一镜一句是理想，一镜 3 句就太闷）。
+   再看它给出的 `节奏建议:` 行——每条都指名场景并带数字，照着补素材或加切点就行；没有建议说明没算到明显问题。
 2. 报告里的 `unresolved`：必须是空。非空说明某句没画面。
 3. `validate --check-files`：`0 个错误`；警告逐条读，`S023`（人物不在 cast）通常是笔误。
 4. `build` 的成片体检：`duration_match` 的差值应在 ±0.25s 内，`no_long_black` / `no_long_silence` 必须 OK。

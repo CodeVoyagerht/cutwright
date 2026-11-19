@@ -55,6 +55,11 @@ jobs:
   render:
     name: 真渲一条（冒烟）
     runs-on: ubuntu-latest
+    # 冒烟用 --fast 渲：这条 job 证明的是「克隆 → 装 → 出片 → 体检能跑通」，
+    # 不是画质评审。交付档（默认 crf 15/18 + preset slow）在 2 核 runner 上要跑
+    # 十几二十分钟，没人为一条 13.8 秒的片子等那么久。
+    # 顺带把冒烟钉上时限：真要挂住，10 分钟就红，别占着 6 小时的默认上限。
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -79,7 +84,7 @@ jobs:
 
       - name: 出片 + 体检
         run: |
-          cutwright build examples/demo/shotlist.json -o out --check-files
+          cutwright build examples/demo/shotlist.json -o out --check-files --fast
           cutwright qc examples/demo/shotlist.json --mp4 "$(ls out/*.mp4 | head -1)"
 
       - name: 产物信息

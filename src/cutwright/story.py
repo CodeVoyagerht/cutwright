@@ -210,6 +210,9 @@ class StoryReport:
     # 素材复用：{文件名: 用了几次}，按次数降序、最多 5 条。
     # 素材数远少于镜头数时，真正决定观感的就是这张表——7 次和 2 次看着不一样。
     reuse: Dict[str, int] = field(default_factory=dict)
+    # 节奏建议：机器能算出来的「哪里会看着闷/跳」，每条都带场景与数字。
+    # 不写「建议优化节奏」这种废话——说不清哪一场哪一镜就等于没说。
+    rhythm: List[str] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -222,6 +225,7 @@ class StoryReport:
             "warnings": self.warnings,
             "unresolved": self.unresolved,
             "reuse": self.reuse,
+            "rhythm": self.rhythm,
         }
 
     def summary(self) -> str:
@@ -357,6 +361,7 @@ def build_shotlist(screenplay: Any, index: MaterialIndex,
         key = os.path.basename(item.file)
         counts[key] = counts.get(key, 0) + 1
     report.reuse = dict(sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[:5])
+    report.rhythm = _rhythm_notes(videos)
     music = _music(screenplay, options, total, report)
     if music is not None:
         audios.append(music)
@@ -579,3 +584,49 @@ def read_index(screenplay: Any, index_path: str = "",
             directory = candidate
     options = options or StoryOptions()
     return MaterialIndex.from_dir(directory, paths=options.paths)
+
+
+def _rhythm_notes(videos: List[VideoSegment]) -> List[str]:
+    """算「哪里会看着闷、哪里会跳」，每条都指名场景并带数字。
+
+    只报机器真能判断的三件事：素材是不是太少（同一画面反复出现）、
+    平均镜长是不是出格（短剧 1.6–2.4s）、长度是不是太齐（没有起伏）。
+    审美交给人的地方不装懂——写「建议优化节奏」等于没说。
+    """
+    if not videos:
+        return []
+    notes: List[str] = []
+    per_act: Dict[str, List[VideoSegment]] = {}
+    for item in videos:
+        per_act.setdefault(item.act or "?", []).append(item)
+
+    for act, items in per_act.items():
+        files = {os.path.basename(v.file) for v in items}
+        avg = sum(v.tl_dur for v in items) / len(items)
+        if len(items) >= 4 and len(files) == 1:
+            notes.append(f"{act}：{len(items)} 镜只用了 1 段素材，整场是同一个画面"
+                         "——补拍 2–3 段本场镜头")
+        elif len(items) >= 4 and len(files) <= 2:
+            notes.append(
+                f"{act}：{len(items)} 镜只用 {len(files)} 段素材（平均 {len(items) / len(files):.1f} 镜/段）"
+                "——本场再补 2–3 段，或给现有素材补上本场标签")
+        if avg > 3.0:
+            notes.append(f"{act}：平均 {avg:.1f}s/镜，短剧通常 1.6–2.4s"
+                         "——在台词之间加个切点")
+        elif len(items) >= 4 and avg < 1.2:
+            notes.append(f"{act}：平均 {avg:.1f}s/镜，偏碎——观众来不及看清")
+
+    durs = [v.tl_dur for v in videos]
+    mean = sum(durs) / len(durs)
+    if len(durs) >= 6:
+        band = sum(1 for d in durs if abs(d - mean) <= 0.2)
+        if band / len(durs) >= 0.6:
+            notes.append(
+                "节奏单一：%.0f%% 的镜头都在 %.1f±0.2s，混几镜 1.2s 的短镜"
+                "与 3.5s 的长镜会更有起伏" % (100.0 * band / len(durs), mean))
+    longest = max(durs)
+    if longest > 4.0:
+        over = sum(1 for d in durs if d > 4.0)
+        notes.append("有 %d 镜超过 4.0s（最长 %.1fs），观众会等"
+                     "——除非那是刻意的停顿" % (over, longest))
+    return notes[:6]

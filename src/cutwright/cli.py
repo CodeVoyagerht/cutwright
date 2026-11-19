@@ -259,6 +259,10 @@ def cmd_build(args: argparse.Namespace) -> int:
         return 1
 
     options = _parse_opts(args.opt)
+    if args.fast:
+        # 快速预览走后端已有的 preview 档（切片 veryfast/crf28、成片 veryfast/crf26），
+        # 比交付档快一个量级；切片摘要里带着这面旗，所以预览切片不会被当成成品复用。
+        options["preview"] = True
     if args.dry_run:
         options["dry_run"] = True
     backend = get_backend(args.backend, options=options)
@@ -274,6 +278,7 @@ def cmd_build(args: argparse.Namespace) -> int:
     result = backend.build(tl, out_dir)
 
     data = {"backend": args.backend, "out_dir": out_dir,
+            "preview": bool(options.get("preview")),
             "result": result.to_dict(),
             "qc": health.to_dict()}
 
@@ -287,6 +292,8 @@ def cmd_build(args: argparse.Namespace) -> int:
     if args.json:
         _print_json(data)
     else:
+        if options.get("preview"):
+            _err("这是 --fast 快速预览（编码更快、画质略降）。要交付就用同一条命令去掉 --fast 再渲一次。")
         if result.ok:
             print(f"构建成功（{args.backend}）")
             for artifact in result.artifacts:
@@ -558,6 +565,8 @@ def cmd_story(args: argparse.Namespace) -> int:
         print(f"    ……另有 {len(report.per_scene) - 12} 场")
     print(f"  字幕 {len(shotlist.text_segments)} 条  旁白 {len(shotlist.vo_segments)} 段  "
           f"音频 {len(shotlist.audio_segments)} 条")
+    for note in report.rhythm:
+        print(f"  节奏建议: {note}")
     if report.reuse:
         worst = next(iter(report.reuse.items()))
         top = ", ".join(f"{name}×{n}" for name, n in report.reuse.items())
@@ -682,6 +691,8 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--opt", action="append", metavar="KEY=VALUE",
                     help="传给后端的高级选项，可重复")
     sp.add_argument("--dry-run", action="store_true", help="只出计划不落盘")
+    sp.add_argument("--fast", action="store_true",
+                    help="快速预览：切片/成片都用更快的编码参数（画质略降，别拿去交付）")
     sp.add_argument("--force", action="store_true", help="有 error 也继续")
     sp.add_argument("--check-files", action="store_true", help="构建前检查素材存在")
     sp.add_argument("--no-verify", action="store_true", help="出片后跳过成片体检")

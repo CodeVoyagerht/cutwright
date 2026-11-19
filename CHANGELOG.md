@@ -39,6 +39,15 @@
 
 ### 修复
 
+- **`import` 说清「丢了多少」**：以前只有一句笼统的「转场、关键帧、特效不还原」。
+  现在从草稿里数出转场 / 特效·滤镜 / 关键帧各多少个（`materials.transitions`、
+  `video_effects`/`effects`/`filters`、段落 `common_keyframes` 与全局 `keyframes`），
+  命令行打印「不还原: 转场 2 个、特效/滤镜 1 个、关键帧 2 个」，`--json` 里是 `lost`。
+  新增 `tests/test_jianying_reader.py::LostFeatureTest`（3 例）。
+- **草稿片段缺 `source_timerange` 时读错长度**：原来回落到「素材全长」，于是一个 2 秒的
+  片段被按 4 秒素材算，成片凭空多 2 秒。现在优先用片段在时间线上的长度（`target_timerange`），
+  再退素材时长。新增 `MissingSourceRangeTest`。
+
 - **qc 查「字幕读不读得完」**：新增 `text_readable`（第 23 项检查），按字数 ÷ 时长算
   字/秒，超过 `CAPTION_CPS_MAX = 12` 报 `warn` + `Q105`。以前只查「字幕在画面内」，
   可 30 个字挂 1.2 秒（25 字/秒）也在画面内，只是没人读得完。旁白层不可见时不计入。

@@ -607,7 +607,7 @@ def cmd_import(args: argparse.Namespace) -> int:
         _print_json({"ok": not errors, "summary": draft.summary(), "out": args.out,
                      "shots": len(draft.videos), "texts": len(draft.texts),
                      "audios": len(draft.audios), "encrypted": draft.encrypted,
-                     "missing": missing,
+                     "missing": missing, "lost": draft.lost,
                      "warnings": draft.warnings + [str(i) for i in errors]})
         return 0 if not errors else 1
 
@@ -615,6 +615,9 @@ def cmd_import(args: argparse.Namespace) -> int:
     print(f"  → {args.out}：{len(shotlist.video_segments)} 镜 / "
           f"{len(shotlist.text_segments)} 条字幕 / {len(shotlist.audio_segments)} 条音频 / "
           f"{_hms(shotlist.video_duration())}")
+    if draft.lost:
+        print("  不还原: " + "、".join("%s %d 个" % (k, v)
+                                       for k, v in draft.lost.items()))
     for warning in draft.warnings[:6]:
         _err(f"注意: {warning}")
     if missing:

@@ -58,6 +58,9 @@ class DraftRead:
     audios: List[Dict[str, Any]] = field(default_factory=list)
     encrypted: bool = False
     warnings: List[str] = field(default_factory=list)
+    # 「读得懂但不还原」的东西各有多少：转场 / 特效 / 关键帧 …
+    # 只说「不还原」用户不知道损失多大，给出数字才知道要不要回剪映看一眼。
+    lost: Dict[str, int] = field(default_factory=dict)
 
     @property
     def duration(self) -> float:
@@ -213,9 +216,17 @@ def read_content(content: Dict[str, Any], *, path: str = "") -> DraftRead:
                               % (len(missing_ids), ", ".join(missing_ids[:4])))
     if not draft.videos:
         draft.warnings.append("这份草稿没有视频段——分镜表会是空的")
-    draft.warnings.append("转场、关键帧、特效不还原；字幕只看颜色/描边/位置/关键词，"
-                          "字号与描边粗细用画布默认——剪映的 font_size 没有公开单位，"
-                          "换算成 px 只能靠试，猜错比不猜更糟。")
+    draft.lost = _lost_features(content, tracks, materials)
+    if draft.lost:
+        detail = "、".join("%s %d 个" % (name, count)
+                          for name, count in draft.lost.items())
+        draft.warnings.append(
+            "这些读进来了但不还原：%s——重建后一律变成硬切/静态。" % detail)
+    else:
+        draft.warnings.append("这份草稿没有转场、特效或关键帧，读回来就是纯排布。")
+    draft.warnings.append("字幕只看颜色/描边/位置/关键词，字号与描边粗细用画布默认"
+                          "——剪映的 font_size 没有公开单位，换算成 px 只能靠试，"
+                          "猜错比不猜更糟。")
     if draft.texts:
         draft.warnings.append("旁白/画外音在草稿里也是文字轨，和字幕分不开——读回来一律"
                               "按字幕处理，重建前自己确认哪些不该出字。")
@@ -345,11 +356,16 @@ def _video_item(segment: Dict[str, Any], material: Dict[str, Any]) -> Dict[str, 
     tl_start, tl_dur = _range(segment, "target_timerange")
     speed = _speed(segment)
     photo = str(material.get("type") or "").lower() in ("photo", "image")
-    if src_dur <= 0.0 and material.get("duration"):
-        try:
-            src_dur = round(float(material["duration"]) / MICROS, 4)
-        except (TypeError, ValueError):
+    if src_dur <= 0.0:
+        # 没写 source_timerange 时优先用**片段在时间线上的长度**：素材有多长不代表
+        # 这一段用了多长（实测踩过：2 秒的片段被按 4 秒素材全长算，成片凭空多 2 秒）。
+        if tl_dur > 0:
             src_dur = tl_dur
+        elif material.get("duration"):
+            try:
+                src_dur = round(float(material["duration"]) / MICROS, 4)
+            except (TypeError, ValueError):
+                src_dur = tl_dur
     return {"file": _material_path(material), "src_start": src_start,
             "src_dur": src_dur if src_dur > 0 else tl_dur,
             "tl_start": tl_start, "tl_dur": tl_dur if tl_dur > 0 else src_dur,
@@ -553,3 +569,52 @@ def _wrap_keywords(text: str, keywords: Optional[Sequence[str]]) -> str:
         cursor = end
     pieces.append(text[cursor:])
     return "".join(pieces)
+
+
+# 「读得懂但不还原」的四类东西，各自在 materials / 段落里叫什么。
+_EFFECT_KEYS = ("video_effects", "effects", "filters", "audio_effects", "masks")
+
+
+def _lost_features(content: Dict[str, Any], tracks: List[Any],
+                   materials: Dict[str, Any]) -> Dict[str, int]:
+    """数一数草稿里有多少转场、特效、关键帧——它们能读出来但不重建。"""
+    counts: Dict[str, int] = {}
+
+    transitions = _by_id(materials.get("transitions"))
+    used_transition = 0
+    effect_ids = set()
+    for key in _EFFECT_KEYS:
+        effect_ids |= set(_by_id(materials.get(key)))
+    used_effects = 0
+    keyframes = 0
+    for track in tracks:
+        if not isinstance(track, dict):
+            continue
+        for segment in track.get("segments") or []:
+            if not isinstance(segment, dict):
+                continue
+            for ref in segment.get("extra_material_refs") or []:
+                if ref in transitions:
+                    used_transition += 1
+                if ref in effect_ids:
+                    used_effects += 1
+            for item in segment.get("common_keyframes") or []:
+                if isinstance(item, dict) and (item.get("keyframe_list")
+                                               or item.get("keyframe_list_2")):
+                    keyframes += 1
+            if isinstance(segment.get("keyframes"), dict) and segment["keyframes"]:
+                keyframes += 1
+
+    root_keyframes = content.get("keyframes")
+    if isinstance(root_keyframes, dict):
+        for _name, items in root_keyframes.items():
+            if isinstance(items, list):
+                keyframes += len([item for item in items if item])
+
+    if used_transition:
+        counts["转场"] = used_transition
+    if used_effects:
+        counts["特效/滤镜"] = used_effects
+    if keyframes:
+        counts["关键帧"] = keyframes
+    return counts

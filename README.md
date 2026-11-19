@@ -156,6 +156,9 @@ $ cutwright import "C:\Users\me\...\com.lveditor.draft\我的草稿" -o shotlist
 （上面这一帧是从真草稿 `11月13日` 读回、重新渲染出来的：黄字保持在画面顶部，
 关键词位置也对得上。原来这条线读回来是一律白色底部字幕。）
 
+读回来的时候会**说清丢了多少**：转场几个、特效/滤镜几个、关键帧几个，命令行直接列出
+`不还原: 转场 2 个、特效/滤镜 1 个、关键帧 2 个`——只说「不还原」你不知道损失大不大。
+
 图片段不会被当成「没画面」丢掉：它们是静帧，读回来是 `"still": true` 的镜头，重建时
 按同样时长铺一张图。剪映把朗读音频存在草稿目录里、路径写成
 `##_draftpath_placeholder_<uuid>_##/textReading/…`，这类路径会先还原成草稿目录下的真路径，
@@ -260,10 +263,10 @@ python skills/cutwright/scripts/install.py --target all
 python -m unittest discover -s tests -t .
 ```
 
-291 个用例，零依赖，`git clone` 完就能跑。真渲染的用例会检测 ffmpeg，没有就 skip
+295 个用例，零依赖，`git clone` 完就能跑。真渲染的用例会检测 ffmpeg，没有就 skip
 而不是 fail——CI 上的 `windows-latest` 有 ffmpeg，本地没装的开发者也不该被卡住。
 
-这台机器上的实测记录（doctor / validate / plan / build / qc / 剪映草稿 / 291 个用例）
+这台机器上的实测记录（doctor / validate / plan / build / qc / 剪映草稿 / 295 个用例）
 都在 [docs/acceptance.md](docs/acceptance.md)，包括**哪些是未验收项**。
 
 契约测试（`tests/test_cli_contract.py`）锁死的是**机器可读的部分**：`--json` 的字段、

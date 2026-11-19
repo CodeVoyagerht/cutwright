@@ -262,3 +262,79 @@ class StyleRestoreTest(unittest.TestCase):
                   "text_color": "#FFFFFF", "subtitle_keywords": ["手环", "手环在箱"]}]
         text = read_content(self.content(texts)).to_shotlist().text_segments[0].text
         self.assertEqual(text.count("｜"), 2, "重叠关键词只包一次")
+
+
+class LostFeatureTest(unittest.TestCase):
+    """读得懂但不还原的东西，要说出丢了多少——一句「不还原」用户不知道损失多大。"""
+
+    def content(self, *, transitions=(), effects=(), keyframes=(), root=None):
+        segment = {"material_id": "v1", "target_timerange": {"start": 0,
+                                                             "duration": 2000000},
+                   "extra_material_refs": [t for t in transitions]
+                   + [e for e in effects]}
+        if keyframes:
+            segment["common_keyframes"] = [
+                {"property_type": "KFTypePositionX", "keyframe_list": list(keyframes)}
+            ]
+        body = {
+            "canvas_config": {"width": 1080, "height": 1920},
+            "materials": {
+                "videos": [{"id": "v1", "path": "C:/a.mp4", "type": "video",
+                            "duration": 2000000}],
+                "texts": [], "audios": [],
+                "transitions": [{"id": t} for t in transitions],
+                "video_effects": [{"id": e} for e in effects],
+            },
+            "tracks": [{"type": "video", "segments": [segment]}],
+        }
+        if root is not None:
+            body["keyframes"] = root
+        return body
+
+    def test_counts_are_reported(self):
+        draft = read_content(self.content(transitions=["T1", "T2"], effects=["E1"],
+                                          keyframes=[{"time": 0}, {"time": 1}]))
+        self.assertEqual(draft.lost.get("转场"), 2)
+        self.assertEqual(draft.lost.get("特效/滤镜"), 1)
+        self.assertEqual(draft.lost.get("关键帧"), 1)
+        joined = " ".join(draft.warnings)
+        self.assertIn("转场 2 个", joined)
+        self.assertIn("不还原", joined)
+
+    def test_root_keyframes_counted(self):
+        draft = read_content(self.content(
+            root={"adjusts": [{"id": "k1"}, {"id": "k2"}], "filters": []}))
+        self.assertEqual(draft.lost.get("关键帧"), 2)
+
+    def test_plain_draft_says_there_is_nothing_to_lose(self):
+        draft = read_content(self.content())
+        self.assertEqual(draft.lost, {})
+        self.assertIn("没有转场、特效或关键帧", " ".join(draft.warnings))
+
+
+class MissingSourceRangeTest(unittest.TestCase):
+    """片段没写 source_timerange 时，按它在时间线上的长度算，不按素材全长算。
+
+    实测踩过：2 秒的片段被按 4 秒素材全长读，成片凭空多 2 秒。
+    """
+
+    def content(self):
+        return {
+            "canvas_config": {"width": 1080, "height": 1920},
+            "materials": {"videos": [{"id": "v1", "path": "C:/a.mp4",
+                                      "type": "video", "duration": 4000000}],
+                          "texts": [], "audios": []},
+            "tracks": [{"type": "video", "segments": [
+                {"material_id": "v1",
+                 "target_timerange": {"start": 0, "duration": 2000000}},
+                {"material_id": "v1",
+                 "target_timerange": {"start": 2000000, "duration": 2000000}},
+            ]}],
+        }
+
+    def test_uses_target_duration_when_source_missing(self):
+        draft = read_content(self.content())
+        for item in draft.videos:
+            self.assertAlmostEqual(item["src_dur"], 2.0, places=3,
+                                   msg="该按片段长度读，而不是素材全长 4 秒")
+        self.assertAlmostEqual(draft.duration, 4.0, places=2)

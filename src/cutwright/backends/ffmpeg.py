@@ -982,10 +982,13 @@ class FFmpegBackend(Backend):
             f"volume={_f(float(item.gain_db))}dB",
             f"atrim=0:{_f(dur)}",
             "asetpts=PTS-STARTPTS",
-            f"adelay={delay_ms}|{delay_ms}",
         ]
+        # afade 必须排在 adelay **之前**：afade 的 st 是相对流自身时间轴的，
+        # 而 adelay 会把整条流右移 tl_start。反过来写的话，延迟 1s 的配乐
+        # 会被在 0.67–1.0s 淡出成 0，之后一个音都不剩（实测整条音轨 -91 dB）。
         if fade > 0:
             chain.append(f"afade=t=out:st={_f(max(0.0, dur - fade))}:d={_f(fade)}")
+        chain.append(f"adelay={delay_ms}|{delay_ms}")
         # sidechaincompress 要求主路与侧链采样率/声道一致，这里统一成成片规格。
         chain.append("aresample=48000")
         chain.append("aformat=sample_fmts=fltp:channel_layouts=stereo")

@@ -83,7 +83,7 @@
 ## 怎么复核
 
 ```bash
-python -m unittest discover -s tests -t .     # 316 个用例通过（2 skip）
+python -m unittest discover -s tests -t .     # 328 个用例通过（2 skip）
 python tools/lint_skill.py                    # [OK  ] cutwright
 ```
 

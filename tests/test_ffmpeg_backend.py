@@ -12,6 +12,8 @@
 from __future__ import annotations
 
 import os
+import re
+import subprocess
 import shutil
 import tempfile
 import time
@@ -140,6 +142,20 @@ def _integrated_lufs(path: str, paths) -> float:
     if not hits:
         raise AssertionError("量不出响度：\n" + text[-400:])
     return float(hits[-1])
+
+
+
+def _window_volume(path: str, start: float, duration: float,
+                   paths: Paths) -> float:
+    """量一段窗口的平均电平（dB）。测试用，直接调 ffmpeg——`mean_volume_db`
+    不接受时间窗口参数。"""
+    proc = subprocess.run(
+        [paths.ffmpeg, "-hide_banner", "-nostats", "-i", path,
+         "-af", "atrim=%.3f:%.3f,volumedetect" % (start, start + duration),
+         "-vn", "-f", "null", os.devnull],
+        capture_output=True, text=True, timeout=120)
+    match = re.search(r"mean_volume:\s*(-?[\d.]+) dB", proc.stderr or "")
+    return float(match.group(1)) if match else -999.0
 
 
 class BackendContractTest(unittest.TestCase):
@@ -715,6 +731,33 @@ class FFmpegBuildTest(unittest.TestCase):
         self.assertIn("跳过响度归一化", joined)
         lufs = _integrated_lufs(result.artifacts[0], self.paths)
         self.assertLess(lufs, -40.0, "几乎无声的片子不该被拉到 -14 LUFS")
+
+    def test_music_starting_late_is_not_silenced(self):
+        """配乐从第 1 秒开始、前面还有镜头时，那一秒不能把整条音轨淡没。
+
+        这条是量出来的：``afade`` 排在 ``adelay`` 之后时，淡出窗口（0.67–1.0s）
+        落在音频真正开始（1.0s）之前，于是 1.0s 之后全被静音——整条音轨 -91 dB。
+        """
+        timeline = Timeline.from_shotlist(Shotlist.from_dict({
+            "name": "late_music",
+            "canvas": {"width": CANVAS[0], "height": CANVAS[1]},
+            "fps": FPS,
+            # 用没音轨的镜头：这样 1 秒前只可能是静音，量得干净。
+            "video_segments": [{"file": self.clips[2], "src_start": 0.0,
+                                "src_dur": CLIP_SECONDS, "tl_start": 0.0}],
+            "audio_segments": [{"file": self.music, "tl_start": 1.0,
+                                "tl_dur": 1.0, "gain_db": 0.0}],
+        }))
+        out_dir = os.path.join(self.scratch, "out_late_music")
+        result = FFmpegBackend(paths=self.paths,
+                               options={"keep_temp": True, "loudness": False}).build(
+            timeline, out_dir)
+        self.assertTrue(result.ok, msg=result.error)
+        film = result.artifacts[0]
+        loud = _window_volume(film, 1.1, 0.4, self.paths)
+        quiet = _window_volume(film, 0.2, 0.3, self.paths)
+        self.assertGreater(loud, -45.0, "配乐该在第 1 秒后响起来：%.1f dB" % loud)
+        self.assertLess(quiet, -60.0, "第 1 秒之前不该有配乐：%.1f dB" % quiet)
 
     # -- 配乐给人声让路（ducking） ----------------------------------------- #
     def _duck_film(self, name: str, **options):

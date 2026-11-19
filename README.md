@@ -198,6 +198,8 @@ $ cutwright import "C:\Users\me\...\com.lveditor.draft\我的草稿" -o shotlist
 `examples/demo/shotlist-ci.json`（540×960 / 4 镜 / 6 秒），配上 `--fast` 本机 6 秒渲完；
 之前那条 1080p 的 19 分钟冒烟，现在整条流水线几十秒收工。
 
+最近一轮改动的「前后数字」汇总在一页里：[docs/changes-2026-11.md](docs/changes-2026-11.md)——剧本产线、提速、草稿读入、响度与让路、质检扩容，逐条带实测对比。
+
 ## 安装
 
 ```bash

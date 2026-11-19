@@ -680,10 +680,20 @@ def validate(shotlist: Shotlist, check_files: bool = False) -> List[Issue]:
                 warn("W034", f"起始 {seg.tl_start:.3f}s 已在成片末尾（{derived:.3f}s）之后，永远不会显示", where)
 
     # --- 叠加层 / 音频 ---
+    # 这两层都没有"连续性"概念：放哪儿就在哪儿。但「放在片尾之后」等于放了个空气——
+    # 成片照样渲完、体检照样过，用户以为加了音乐/贴纸，其实什么都没发生。
     for i, ov in enumerate(shotlist.image_overlays):
         where = f"image_overlays[{i}]"
         if not ov.file:
             err("E040", "缺少 file 字段", where)
+        if ov.tl_dur is not None and ov.tl_dur <= 0:
+            err("E047", f"tl_dur 必须为正数，当前 {ov.tl_dur}", where)
+        if ov.tl_start < 0:
+            err("E048", f"tl_start 不能为负，当前 {ov.tl_start}", where)
+        if derived > 0 and ov.tl_start >= derived - _CHAIN_EPS:
+            warn("W047", f"起点 {ov.tl_start:.3f}s 已在成片末尾（{derived:.3f}s）之后，永远不会出现", where)
+        elif derived > 0 and ov.tl_dur is not None and ov.tl_start + ov.tl_dur > derived + 0.01:
+            warn("W048", f"到 {ov.tl_start + ov.tl_dur:.3f}s 结束，超出片尾 {derived:.3f}s——会被截断", where)
         if check_files and ov.file:
             p = shotlist.resolve_asset(ov.file)
             if not os.path.exists(p):
@@ -692,6 +702,14 @@ def validate(shotlist: Shotlist, check_files: bool = False) -> List[Issue]:
         where = f"audio_segments[{i}]"
         if not au.file:
             err("E050", "缺少 file 字段", where)
+        if au.tl_dur is not None and au.tl_dur <= 0:
+            err("E052", f"tl_dur 必须为正数，当前 {au.tl_dur}", where)
+        if au.tl_start < 0:
+            err("E053", f"tl_start 不能为负，当前 {au.tl_start}", where)
+        if derived > 0 and au.tl_start >= derived - _CHAIN_EPS:
+            warn("W045", f"起点 {au.tl_start:.3f}s 已在成片末尾（{derived:.3f}s）之后，永远不会响", where)
+        elif derived > 0 and au.tl_dur is not None and au.tl_start + au.tl_dur > derived + 0.01:
+            warn("W046", f"到 {au.tl_start + au.tl_dur:.3f}s 结束，超出片尾 {derived:.3f}s——会被截断", where)
         if check_files and au.file:
             p = shotlist.resolve_asset(au.file)
             if not os.path.exists(p):

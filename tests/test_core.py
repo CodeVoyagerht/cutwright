@@ -114,6 +114,24 @@ class TestSchema(unittest.TestCase):
         self.assertIn("W044", codes)
         self.assertNotIn("E061", codes)
 
+    def test_audio_and_overlay_placed_after_the_end(self):
+        """放在片尾之后的音乐/贴纸等于没加：渲得出来、体检也过，必须提醒。"""
+        sl = Shotlist.from_dict({
+            "video_segments": [{"file": "a.mp4", "src_dur": 3.0}],
+            "audio_segments": [{"file": "bgm.mp3", "tl_start": 10.0, "tl_dur": 2.0}],
+            "image_overlays": [{"file": "logo.png", "tl_start": 2.5, "tl_dur": 2.0}],
+        })
+        issues = {i.code: i for i in validate(sl)}
+        self.assertIn("W045", issues)          # 音乐永远不会响
+        self.assertIn("W048", issues)          # 贴纸超出片尾，会被截断
+
+    def test_zero_length_audio_is_an_error(self):
+        sl = Shotlist.from_dict({
+            "video_segments": [{"file": "a.mp4", "src_dur": 3.0}],
+            "audio_segments": [{"file": "bgm.mp3", "tl_start": 0.0, "tl_dur": 0.0}],
+        })
+        self.assertIn("E052", {i.code for i in validate(sl)})
+
 
 class TestTimeline(unittest.TestCase):
     def test_sequential_tl_start(self):

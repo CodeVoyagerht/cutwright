@@ -179,5 +179,72 @@ class TestShotlistWriting(unittest.TestCase):
         self.assertNotIn("Traceback", err)
 
 
+class TestFastSwitch(unittest.TestCase):
+    """``--fast`` 的契约：它是预览档的快捷方式，并且必须**说清楚**。
+
+    这条开关的意义是「先看一眼」，所以两件事都不能变：JSON 里 ``preview`` 要说真话，
+    人读的输出里要有「别拿去交付」的提醒。少了提醒，早晚有人把预览片交出去。
+    """
+
+    def setUp(self):
+        self._tmp = tmpdir("cli-fast")
+        self.dir = self._tmp.__enter__()
+
+    def tearDown(self):
+        self._tmp.__exit__(None, None, None)
+
+    def _write(self, name, payload):
+        path = os.path.join(self.dir, name)
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(payload, fh, ensure_ascii=False)
+        return path
+
+    def test_fast_sets_preview_in_json(self):
+        path = self._write("ok.json", CLEAN)
+        code, data = _json_stdout(["build", path, "-o", self.dir, "--dry-run",
+                                   "--json", "--fast", "--force"])
+        self.assertEqual(code, 0)
+        self.assertTrue(data["preview"])
+
+    def test_without_fast_preview_is_false(self):
+        path = self._write("ok.json", CLEAN)
+        _, data = _json_stdout(["build", path, "-o", self.dir, "--dry-run", "--json", "--force"])
+        self.assertFalse(data["preview"])
+
+    def test_fast_warns_before_delivering(self):
+        path = self._write("ok.json", CLEAN)
+        _, _, err = _run(["build", path, "-o", self.dir, "--dry-run", "--fast", "--force"])
+        self.assertIn("--fast", err)
+        self.assertIn("交付", err)
+
+    def test_opt_preview_still_works(self):
+        """老写法 ``--opt preview=true`` 不能被 --fast 挤掉。"""
+        path = self._write("ok.json", CLEAN)
+        _, data = _json_stdout(["build", path, "-o", self.dir, "--dry-run",
+                                "--json", "--opt", "preview=true", "--force"])
+        self.assertTrue(data["preview"])
+
+
+class TestShippedExamples(unittest.TestCase):
+    """随包发出的分镜表要一直是合法的——CI 的冒烟直接渲它们。"""
+
+    def test_ci_shotlist_validates(self):
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        path = os.path.join(root, "examples", "demo", "shotlist-ci.json")
+        self.assertTrue(os.path.exists(path), f"缺少 {path}")
+        code, _, err = _run(["validate", path])
+        self.assertEqual(code, 0, err)
+
+    def test_ci_shotlist_is_small(self):
+        """这份小样的存在意义就是「几秒钟能渲完」，别让它长回 1080p 长片。"""
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with open(os.path.join(root, "examples", "demo", "shotlist-ci.json"),
+                  encoding="utf-8") as fh:
+            data = json.load(fh)
+        self.assertLessEqual(data["canvas"]["width"], 720)
+        self.assertLessEqual(data["total_duration"], 8.0)
+        self.assertLessEqual(len(data["video_segments"]), 4)
+
+
 if __name__ == "__main__":
     unittest.main()

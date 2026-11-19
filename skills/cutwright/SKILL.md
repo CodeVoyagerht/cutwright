@@ -162,8 +162,13 @@ cutwright build shotlist.json -o out               # ④ 出片（或 -b jianyin
 | `story <剧本> --index idx.json -o s.json` | 剧本 → 分镜表，打印分场报告 |
 | `import <草稿目录> -o s.json` | 剪映草稿 → 分镜表（`--plain-only` 表示绝不加载 dll） |
 
-`build` 的提速选项：`--opt jobs=4`（多镜并行）、`--opt preview=true`（低码率快编一版）、
-切片默认按内容摘要缓存，同一份素材第二次渲直接复用。
+`build` 的提速选项：`--fast`（= `--opt preview=true`，低码率快编一版看节奏；**结尾会提醒
+别拿去交付**）、`--opt jobs=4`（多镜并行）、`--dry-run`（只列每段切片的来源/入点/时长，
+不建目录不起 ffmpeg）。切片默认按内容摘要缓存，同一份素材第二次渲直接复用；
+预览与交付的切片缓存键不同，互不污染。
+
+赶进度用 `--fast` 出预览、定下节奏后再去掉它渲交付档——这是本工具推荐的用法，
+不是「先快后忘」的借口：交付的那一版必须是不带 `--fast` 的。
 
 全命令支持 `--json`：stdout 只有 JSON，日志走 stderr。给机器读就用它。
 

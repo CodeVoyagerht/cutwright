@@ -55,10 +55,11 @@ jobs:
   render:
     name: 真渲一条（冒烟）
     runs-on: ubuntu-latest
-    # 冒烟用 --fast 渲：这条 job 证明的是「克隆 → 装 → 出片 → 体检能跑通」，
-    # 不是画质评审。交付档（默认 crf 15/18 + preset slow）在 2 核 runner 上要跑
-    # 十几二十分钟，没人为一条 13.8 秒的片子等那么久。
-    # 顺带把冒烟钉上时限：真要挂住，10 分钟就红，别占着 6 小时的默认上限。
+    # 冒烟用 --fast + 540×960 的小样分镜表（examples/demo/shotlist-ci.json）渲：
+    # 这条 job 证明的是「克隆 → 装 → 出片 → 体检能跑通」，不是画质评审。
+    # 交付档（默认 crf 15/18 + preset slow、1080×1920 带 zoompan）在 2 核 runner 上
+    # 要跑十几二十分钟 —— 没人愿意为一条 13.8 秒的片子等那么久。
+    # 顺带钉时限：真要挂住，20 分钟就红，别占着 6 小时的默认上限。
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
@@ -79,13 +80,15 @@ jobs:
       - name: 合成演示素材
         run: python examples/demo/make_media.py --out examples/demo/materials
 
-      - name: 校验分镜表
-        run: cutwright validate examples/demo/shotlist.json --check-files
+      - name: 校验分镜表（两个都校验，校验不花时间）
+        run: |
+          cutwright validate examples/demo/shotlist.json --check-files
+          cutwright validate examples/demo/shotlist-ci.json --check-files
 
       - name: 出片 + 体检
         run: |
-          cutwright build examples/demo/shotlist.json -o out --check-files --fast
-          cutwright qc examples/demo/shotlist.json --mp4 "$(ls out/*.mp4 | head -1)"
+          cutwright build examples/demo/shotlist-ci.json -o out --check-files --fast
+          cutwright qc examples/demo/shotlist-ci.json --mp4 "$(ls out/*.mp4 | head -1)"
 
       - name: 产物信息
         run: |

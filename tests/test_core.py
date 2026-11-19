@@ -96,6 +96,24 @@ class TestSchema(unittest.TestCase):
         sl = _mini_shotlist(total_duration=100.0)
         self.assertIn("W020", {i.code for i in validate(sl)})
 
+    def test_image_in_video_segments_needs_still_flag(self):
+        """图片没写 still 时后端按视频读，只出 1 帧——必须在 validate 就拦住。"""
+        sl = Shotlist.from_dict({"video_segments": [
+            {"file": "frame.png", "src_dur": 1.5}]})
+        issues = [i for i in validate(sl) if i.code == "E061"]
+        self.assertEqual(len(issues), 1)
+        self.assertIn("still", issues[0].message)
+
+        sl.video_segments[0].still = True
+        self.assertNotIn("E061", {i.code for i in validate(sl)})
+
+    def test_still_flag_on_a_video_is_only_a_warning(self):
+        sl = Shotlist.from_dict({"video_segments": [
+            {"file": "clip.mp4", "src_dur": 1.5, "still": True}]})
+        codes = {i.code for i in validate(sl)}
+        self.assertIn("W044", codes)
+        self.assertNotIn("E061", codes)
+
 
 class TestTimeline(unittest.TestCase):
     def test_sequential_tl_start(self):

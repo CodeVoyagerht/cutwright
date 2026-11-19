@@ -54,6 +54,12 @@ KEYWORD_SEPARATORS = "|｜"
 ERROR = "error"
 WARN = "warn"
 
+# 图片后缀：放进 video_segments 时必须是静帧（still=True），否则后端按视频读，
+# 只解出 1 帧——成片里一闪而过，几乎没人能一眼看出是哪里错了。
+IMAGE_SUFFIXES = (
+    ".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff", ".heic", ".heif", ".avif",
+)
+
 
 def split_keywords(text: str) -> Tuple[str, List[str]]:
     """按分隔符把文案切成「常规段 + 关键词段列表」。
@@ -619,6 +625,16 @@ def validate(shotlist: Shotlist, check_files: bool = False) -> List[Issue]:
             err("E014", f"speed 必须为正数，当前 {seg.speed}", where)
         if seg.zoom not in ("none", "in", "out"):
             warn("W015", f"未知 zoom 值 {seg.zoom!r}，按 none 处理", where)
+        suffix = os.path.splitext(seg.file)[1].lower() if seg.file else ""
+        if suffix in IMAGE_SUFFIXES and not seg.still:
+            err(
+                "E061",
+                f"这是图片（{suffix}），要当静帧用请写 \"still\": true"
+                f"——不然后端按视频读，只出 1 帧（{1.0 / max(shotlist.fps, 1e-6):.3f}s 的一闪）",
+                where,
+            )
+        if seg.still and suffix and suffix not in IMAGE_SUFFIXES:
+            warn("W044", f"静帧标记打在 {suffix} 上——会按 -loop 1 把这一帧重复 {seg.src_dur:.2f}s", where)
         if seg.still and seg.src_start > 0:
             warn("W042", f"静帧没有入点，src_start={seg.src_start} 会被忽略", where)
         if seg.still and abs(seg.speed - 1.0) > 1e-6:

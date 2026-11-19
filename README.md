@@ -189,6 +189,9 @@ $ cutwright import "C:\Users\me\...\com.lveditor.draft\我的草稿" -o shotlist
 三条产线都认它：ffmpeg 直出用 `-loop 1` 铺帧，剪映写成 `type=photo` 素材，
 达芬奇放进媒体池。图文号、观点卡、封面停 2 秒，都不用为了「一张图」另开一个工程。
 
+**忘了写 `"still": true` 会被 `validate` 拦下来**（`E061`）：图片一旦被当成视频读，
+只解出 1 帧，成片里就是 0.03 秒的一闪——这种错误肉眼几乎抓不住，所以宁可报错。
+
 ## 重复渲只重切改过的镜头
 
 切片按内容摘要命名（`_build/seg_<digest>.mp4`），同一份素材、同一组参数第二次渲染

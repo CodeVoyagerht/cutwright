@@ -233,9 +233,12 @@ def read_content(content: Dict[str, Any], *, path: str = "") -> DraftRead:
     if draft.lost.get("画中画段"):
         lost["画中画段"] = draft.lost["画中画段"]
     draft.lost = lost
-    if draft.lost:
-        detail = "、".join("%s %d 个" % (name, count)
-                          for name, count in draft.lost.items())
+    # 「画中画段」是整段没读进来，跟「读进来了但不还原」不是一回事，
+    # 它自己那条警告已经说清楚了，这里不再重复。
+    detail = "、".join("%s %d 个" % (name, count)
+                      for name, count in draft.lost.items()
+                      if name != "画中画段")
+    if detail:
         draft.warnings.append(
             "这些读进来了但不还原：%s——重建后一律变成硬切/静态。" % detail)
     else:

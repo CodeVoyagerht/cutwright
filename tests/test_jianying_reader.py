@@ -369,6 +369,8 @@ class PictureInPictureTest(unittest.TestCase):
         joined = " ".join(draft.warnings)
         self.assertIn("画中画", joined)
         self.assertEqual(draft.lost.get("画中画段"), 1)
+        self.assertNotIn("这些读进来了但不还原", joined,
+                         "画中画是整段没读进来，别再被算成「读进来了但不还原」")
 
     def test_shotlist_has_no_overlap_warning(self):
         from cutwright.schema import validate

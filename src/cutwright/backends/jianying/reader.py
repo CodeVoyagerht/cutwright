@@ -174,7 +174,9 @@ def read_content(content: Dict[str, Any], *, path: str = "") -> DraftRead:
     draft = DraftRead(name=os.path.basename(path.rstrip("\\/")) or "draft",
                       path=path, canvas=canvas, fps=fps)
 
+    main_track = _main_video_track(tracks)
     image_count = 0
+    pip_count = 0
     for track in tracks:
         if not isinstance(track, dict):
             continue
@@ -183,6 +185,12 @@ def read_content(content: Dict[str, Any], *, path: str = "") -> DraftRead:
             if not isinstance(segment, dict):
                 continue
             material = _lookup(segment, roots)
+            if (kind == "video" and material is not None
+                    and not _is_main_track(track, main_track)):
+                # 画中画/副视频轨：分镜表一条主轨表达不了同时出现的两个画面，
+                # 混进来只会变成「镜头重叠」，build 会直接拒绝。
+                pip_count += 1
+                continue
             if kind == "video" and material is not None:
                 item = _video_item(segment, material)
                 if item.get("photo"):
@@ -207,6 +215,10 @@ def read_content(content: Dict[str, Any], *, path: str = "") -> DraftRead:
     draft.texts.sort(key=lambda item: item["tl_start"])
     draft.audios.sort(key=lambda item: item["tl_start"])
 
+    if pip_count:
+        draft.warnings.append("草稿里有 %d 段画中画/副视频轨，分镜表只表达主视频轨"
+                              "——这些画面不会读回来（要保留就导出成片再剪）" % pip_count)
+        draft.lost["画中画段"] = pip_count
     if image_count:
         draft.warnings.append("草稿里有 %d 张图片/照片段，已按静帧（still）读进来"
                               "——重建时会铺成同样时长的画面" % image_count)
@@ -216,7 +228,11 @@ def read_content(content: Dict[str, Any], *, path: str = "") -> DraftRead:
                               % (len(missing_ids), ", ".join(missing_ids[:4])))
     if not draft.videos:
         draft.warnings.append("这份草稿没有视频段——分镜表会是空的")
-    draft.lost = _lost_features(content, tracks, materials)
+    lost = _lost_features(content, tracks, materials)
+    # 画中画段是在读视频轨时数出来的，别被这里的重算覆盖掉。
+    if draft.lost.get("画中画段"):
+        lost["画中画段"] = draft.lost["画中画段"]
+    draft.lost = lost
     if draft.lost:
         detail = "、".join("%s %d 个" % (name, count)
                           for name, count in draft.lost.items())
@@ -618,3 +634,28 @@ def _lost_features(content: Dict[str, Any], tracks: List[Any],
     if keyframes:
         counts["关键帧"] = keyframes
     return counts
+
+
+def _is_main_track(track: Dict[str, Any], main: Optional[Dict[str, Any]]) -> bool:
+    """这条视频轨是不是主轨。没有主轨信息时一律当中轨（保守）。"""
+    return main is None or track is main
+
+
+def _main_video_track(tracks: List[Any]) -> Optional[Dict[str, Any]]:
+    """挑主视频轨：跳过 ``flag == 2``（剪映用它标画中画），其余取总时长最长的。"""
+    candidates: List[Tuple[float, Dict[str, Any]]] = []
+    for track in tracks:
+        if not isinstance(track, dict) or track.get("type") != "video":
+            continue
+        if int(track.get("flag") or 0) == 2:
+            continue
+        total = 0.0
+        for segment in track.get("segments") or []:
+            if isinstance(segment, dict):
+                total += _range(segment, "target_timerange")[1]
+        if total > 0:
+            candidates.append((total, track))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda item: item[0], reverse=True)
+    return candidates[0][1]

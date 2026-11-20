@@ -158,6 +158,10 @@ cutwright build real-11-13.json -o out
    报出一串指向 `workspace\##_draftpath…` 的 `E051`。现在占位前缀会被还原成草稿目录下的
    真路径，同一条命令变成 `0 个错误，0 个警告`。
 
+**画中画轨**：合成一份「主轨 0–4s + flag=2 轨 1–3s」的草稿，`import` 只读出主轨一段
+（`videos: [(0.0, 4.0)]`），警告写「草稿里有 1 段画中画/副视频轨……不会读回来」，
+`validate` 不再报 `W019`（修前两条轨的段都进来，1s 处与 4s 的主轨重叠）。
+
 **说清丢了多少**：拿一份合成的三转场草稿（2 个转场 + 1 个特效 + 2 个关键帧）跑 `import`：
 
 ```
@@ -189,7 +193,7 @@ cutwright build real-11-13.json -o out
 
 ```
 python -m unittest discover -s tests -t .
-Ran 328 tests in 62.015s
+Ran 331 tests in 62.015s
 OK (skipped=2)
 ```
 

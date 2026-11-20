@@ -169,6 +169,9 @@ $ cutwright import "C:\Users\me\...\com.lveditor.draft\我的草稿" -o shotlist
 （上面这一帧是从真草稿 `11月13日` 读回、重新渲染出来的：黄字保持在画面顶部，
 关键词位置也对得上。原来这条线读回来是一律白色底部字幕。）
 
+画中画轨（剪映里 ``flag = 2`` 的视频轨）只报数不读回来——分镜表是一条主轨，
+同时出现的两个画面表达不了，硬塞进去只会变成「镜头重叠」。
+
 读回来的时候会**说清丢了多少**：转场几个、特效/滤镜几个、关键帧几个，命令行直接列出
 `不还原: 转场 2 个、特效/滤镜 1 个、关键帧 2 个`——只说「不还原」你不知道损失大不大。
 
@@ -285,10 +288,10 @@ python skills/cutwright/scripts/install.py --target all
 python -m unittest discover -s tests -t .
 ```
 
-328 个用例，零依赖，`git clone` 完就能跑。真渲染的用例会检测 ffmpeg，没有就 skip
+331 个用例，零依赖，`git clone` 完就能跑。真渲染的用例会检测 ffmpeg，没有就 skip
 而不是 fail——CI 上的 `windows-latest` 有 ffmpeg，本地没装的开发者也不该被卡住。
 
-这台机器上的实测记录（doctor / validate / plan / build / qc / 剪映草稿 / 328 个用例）
+这台机器上的实测记录（doctor / validate / plan / build / qc / 剪映草稿 / 331 个用例）
 都在 [docs/acceptance.md](docs/acceptance.md)，包括**哪些是未验收项**。
 
 契约测试（`tests/test_cli_contract.py`）锁死的是**机器可读的部分**：`--json` 的字段、

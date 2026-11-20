@@ -338,3 +338,42 @@ class MissingSourceRangeTest(unittest.TestCase):
             self.assertAlmostEqual(item["src_dur"], 2.0, places=3,
                                    msg="该按片段长度读，而不是素材全长 4 秒")
         self.assertAlmostEqual(draft.duration, 4.0, places=2)
+
+
+PIP_CONTENT = {
+    "canvas_config": {"width": 1080, "height": 1920},
+    "config": {"fps": 30},
+    "materials": {"videos": [
+        {"id": "M1", "type": "video", "path": "C:/m/main.mp4", "duration": 4000000},
+        {"id": "O1", "type": "video", "path": "C:/m/pip.mp4", "duration": 2000000}],
+        "audios": [], "texts": []},
+    "tracks": [
+        {"id": "t_main", "type": "video", "segments": [
+            {"material_id": "M1", "target_timerange": {"start": 0, "duration": 4000000}}]},
+        {"id": "t_pip", "type": "video", "flag": 2, "segments": [
+            {"material_id": "O1", "target_timerange": {"start": 1000000, "duration": 2000000}}]}],
+}
+
+
+class PictureInPictureTest(unittest.TestCase):
+    """画中画轨不能混进主轨：混进去就变成「镜头重叠」，build 会直接拒绝。"""
+
+    def test_only_main_track_is_read(self):
+        draft = read_content(PIP_CONTENT, path=os.path.join("drafts", "pip"))
+        self.assertEqual(len(draft.videos), 1, "只该读主视频轨")
+        self.assertAlmostEqual(draft.videos[0]["tl_start"], 0.0, places=3)
+        self.assertAlmostEqual(draft.videos[0]["tl_dur"], 4.0, places=3)
+
+    def test_pip_is_reported_not_silently_dropped(self):
+        draft = read_content(PIP_CONTENT)
+        joined = " ".join(draft.warnings)
+        self.assertIn("画中画", joined)
+        self.assertEqual(draft.lost.get("画中画段"), 1)
+
+    def test_shotlist_has_no_overlap_warning(self):
+        from cutwright.schema import validate
+        shotlist = read_content(PIP_CONTENT).to_shotlist()
+        codes = [issue.code for issue in validate(shotlist)]
+        self.assertNotIn("W019", codes, "只读主轨之后不该再有镜头重叠")
+        self.assertEqual([issue for issue in validate(shotlist)
+                          if issue.level == "error"], [])
